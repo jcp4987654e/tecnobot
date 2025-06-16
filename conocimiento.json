@@ -1,0 +1,137 @@
+{
+    "info_general": {
+        "keywords": ["instituto", "quienes son", "sobre el instituto", "enet", "segba", "luz y fuerza"],
+        "content": "Somos el instituto 13 de julio, EX ENET.SEGBA, con más de 80 años de experiencia formando los mejores técnicos del país."
+    },
+    "historia": {
+        "keywords": ["historia", "fundacion", "origen", "cuantos años tiene", "desde cuando existe"],
+        "content": "El Instituto fue fundado en 1943 por el Sindicato de Luz y Fuerza para formar a los hijos de sus afiliados. Originalmente conocido como ENET-SEGBA, es un referente en la educación técnica."
+    },
+    "carreras": {
+        "keywords": ["carreras", "que se puede estudiar", "oferta académica", "tecnicaturas", "higiene y seguridad", "sistemas de gestion", "electromecanico"],
+        "content": "El instituto 13 de julio ofrece a nivel secundario la carrera para técnico electromecánico y dos carreras terciarias: la Tecnicatura Superior en Higiene y Seguridad en el Trabajo y la Tecnicatura Superior en Sistemas de Gestión Integrada."
+    },
+    "perfil_egresado": {
+        "keywords": ["perfil del egresado", "salida laboral", "que hace un tecnico", "oportunidades de trabajo"],
+        "content": "El Técnico Electromecánico egresado está capacitado para proyectar, montar, operar y mantener instalaciones y máquinas electromecánicas, así como participar en procesos de producción industrial."
+    },
+    "planes_estudio": {
+        "keywords": ["plan de estudios", "materias", "contenido de las carreras", "que se ve"],
+        "content": "El plan de estudios del secundario como técnico electromecánico consta de 6 años y las terciarias constan de 1,5 a 2 años."
+    },
+    "duracion": {
+        "keywords": ["duracion", "cuanto dura", "años de cursada", "tiempo"],
+        "content": "El nivel secundario dura 6 años y los terciarios entre 1,5 y 2 años."
+    },
+    "requisitos_inscripcion": {
+        "keywords": ["requisitos", "inscripcion", "que necesito para inscribirme", "papeles", "fechas de inscripcion", "cuando me anoto"],
+        "content": "La inscripción para el ciclo lectivo 2026 es del 1 al 20 de diciembre. El proceso es 100% online. Para datos más específicos sobre la documentación, por favor comunícate con secretaría."
+    },
+    "modalidad": {
+        "keywords": ["modalidad", "presencial", "horarios de cursada", "turno", "a que hora se cursa"],
+        "content": "La cursada es presencial, en doble turno de 7:40 a 15:40 hs."
+    },
+    "talleres": {
+        "keywords": ["talleres", "instalaciones", "laboratorios", "infraestructura", "donde se practica"],
+        "content": "El instituto cuenta con talleres especializados de última generación, incluyendo áreas de electricidad, mecánica, tornería, fresado, soldadura y laboratorios de ensayo."
+    },
+    "actividades": {
+        "keywords": ["actividades", "extracurriculares", "olimpiadas", "visitas educativas"],
+        "content": "El instituto fomenta la participación en olimpíadas de física, química y matemática. Además, se organizan visitas educativas a empresas y plantas industriales."
+    },
+    "expo": {
+        "keywords": ["expo", "exposicion", "feria de ciencias", "proyectos de alumnos", "muestra anual"],
+        "content": "Casi a fin de año, el instituto organiza 'LA EXPO', un evento donde todos los alumnos presentan los proyectos que desarrollaron durante el año. Es un día de exposición abierto a la comunidad para mostrar el talento y la formación técnica de nuestros estudiantes."
+    },
+    "horarios_secretaria": {
+        "keywords": ["horarios de secretaria", "atencion al publico", "secretaria"],
+        "content": "La secretaría atiende al público de lunes a viernes, de 18:00 a 21:00 hs."
+    },
+    "aranceles": {
+        "keywords": ["aranceles", "costos", "cuanto cuesta", "matricula", "cuota", "es gratis", "es privado"],
+        "content": "Nuestra institución es privada, tiene un costo de matrícula y una cuota mensual. Se te darán más detalles en secretaría."
+    },
+    "calendario": {
+        "keywords": ["calendario academico", "inicio de clases", "fin de clases", "mesas de examen"],
+        "content": "Las clases comienzan en marzo y finalizan en diciembre. Las fechas de las mesas de examen se anuncian durante el año."
+    },
+    "becas": {
+        "keywords": ["becas", "ayuda economica", "progresar"],
+        "content": "Contamos con el programa de Becas Progresar. Para más información, puedes consultar en la secretaría."
+    },
+    "ubicacion": {
+        "keywords": ["ubicacion", "direccion", "donde queda", "como llego", "domicilio"],
+        "content": "Nuestra sede se encuentra en Humberto Primo 102."
+    },
+    "contacto": {
+        "keywords": ["contacto", "telefono", "email", "llamar", "escribir"],
+        "content": "Puedes llamarnos al (011) 4361-7075 o escribirnos a info@13dejulio.edu.ar."
+    },
+    "redes": {
+        "keywords": ["redes sociales", "instagram", "facebook"],
+        "content": "Síguenos en Instagram como @instituto13dejulio para no perderte ninguna novedad."
+    },
+    "autoridades": {
+        "keywords": ["autoridades", "director", "directivos", "rector"],
+        "content": "Para información sobre las autoridades del instituto, por favor consulta el organigrama en nuestro sitio web o en secretaría."
+    },
+    "material_academico": {
+        "1er_ano": {
+            "matematica": {
+                "profesor": "Prof. Carlos Peralta",
+                "keywords": ["matematica 1", "matematica primer año"],
+                "content": "Material de estudio para Matemática de 1er Año.",
+                "evaluaciones": [
+                    {"fecha": "2025-05-15", "temas": "Funciones Lineales, Sistemas de Ecuaciones."}
+                ],
+                "temas": [
+                    {"nombre": "Funciones Lineales", "keywords": ["funcion lineal", "rectas"], "apuntes": "https://example.com/mat1/func-lineal", "clases": [{"nombre": "Clase 1: Pendiente", "link": "https://example.com/clase1"}]},
+                    {"nombre": "Sistemas de Ecuaciones", "keywords": ["sistemas de ecuaciones", "igualacion"], "apuntes": "https://example.com/mat1/sist-ecuaciones", "clases": []}
+                ]
+            },
+            "lengua": {
+                "profesor": "Prof. Ana Torres",
+                "keywords": ["lengua 1", "literatura primer año"],
+                "content": "Material de estudio para Lengua y Literatura de 1er Año.",
+                "evaluaciones": [{"fecha": "2025-05-20", "temas": "Análisis sintáctico, El Héroe Clásico."}],
+                "temas": [
+                    {"nombre": "Análisis Sintáctico", "keywords": ["sintaxis", "oracion bimembre"], "apuntes": "https://example.com/leng1/sintaxis", "clases": []}
+                ]
+            },
+            "taller": {
+                "profesor": "Prof. Jorge Nuñez",
+                "keywords": ["taller 1", "taller primer año"],
+                "content": "Material de estudio para Taller de 1er Año.",
+                "evaluaciones": [{"fecha": "2025-06-10", "temas": "Uso de herramientas manuales, Normas de seguridad."}],
+                "temas": [
+                    {"nombre": "Seguridad e Higiene", "keywords": ["seguridad", "higiene"], "apuntes": "https://example.com/taller1/seguridad", "clases": []}
+                ]
+            }
+        },
+        "2do_ano": {
+             "matematica": {"profesor": "Prof. Carlos Peralta", "keywords": ["matematica 2"], "content": "Material de Matemática de 2do Año.", "evaluaciones": [], "temas": []},
+             "lengua": {"profesor": "Prof. Ana Torres", "keywords": ["lengua 2"], "content": "Material de Lengua de 2do Año.", "evaluaciones": [], "temas": []},
+             "taller": {"profesor": "Prof. Jorge Nuñez", "keywords": ["taller 2"], "content": "Material de Taller de 2do Año.", "evaluaciones": [], "temas": []}
+        },
+        "3er_ano": {
+             "matematica": {"profesor": "Prof. Laura Gomez", "keywords": ["matematica 3"], "content": "Material de Matemática de 3er Año.", "evaluaciones": [], "temas": []},
+             "lengua": {"profesor": "Prof. Martin Fierro", "keywords": ["lengua 3"], "content": "Material de Lengua de 3er Año.", "evaluaciones": [], "temas": []},
+             "taller": {"profesor": "Prof. Ricardo Diaz", "keywords": ["taller 3"], "content": "Material de Taller de 3er Año.", "evaluaciones": [], "temas": []}
+        },
+        "4to_ano": {
+             "matematica": {"profesor": "Prof. Laura Gomez", "keywords": ["matematica 4"], "content": "Material de Matemática de 4to Año.", "evaluaciones": [], "temas": []},
+             "lengua": {"profesor": "Prof. Martin Fierro", "keywords": ["lengua 4"], "content": "Material de Lengua de 4to Año.", "evaluaciones": [], "temas": []},
+             "taller": {"profesor": "Prof. Ricardo Diaz", "keywords": ["taller 4"], "content": "Material de Taller de 4to Año.", "evaluaciones": [], "temas": []}
+        },
+        "5to_ano": {
+             "matematica": {"profesor": "Prof. Susana Rios", "keywords": ["matematica 5"], "content": "Material de Matemática de 5to Año.", "evaluaciones": [], "temas": []},
+             "lengua": {"profesor": "Prof. Esteban Correa", "keywords": ["lengua 5"], "content": "Material de Lengua de 5to Año.", "evaluaciones": [], "temas": []},
+             "taller": {"profesor": "Prof. Alberto Pardo", "keywords": ["taller 5"], "content": "Material de Taller de 5to Año.", "evaluaciones": [], "temas": []}
+        },
+        "6to_ano": {
+             "matematica": {"profesor": "Prof. Susana Rios", "keywords": ["matematica 6"], "content": "Material de Matemática de 6to Año.", "evaluaciones": [], "temas": []},
+             "lengua": {"profesor": "Prof. Esteban Correa", "keywords": ["lengua 6"], "content": "Material de Lengua de 6to Año.", "evaluaciones": [], "temas": []},
+             "taller": {"profesor": "Prof. Alberto Pardo", "keywords": ["taller 6"], "content": "Material de Taller de 6to Año.", "evaluaciones": [], "temas": []}
+        }
+    }
+}
