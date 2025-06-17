@@ -211,7 +211,7 @@ def render_login_page():
     st.markdown('</div>', unsafe_allow_html=True)
 
 def render_chat_ui(cliente_groq, modelo_embeddings, documentos_planos, indice_embeddings):
-    LOGO_URL = "https://i.imgur.com/gJ5Ym2W.png"
+    LOGO_URL = "https://13dejulio.edu.ar/wp-content/uploads/2022/03/Isologotipo-13-de-Julio-400.png"
     st.markdown('<div class="main-container">', unsafe_allow_html=True)
     with st.sidebar:
         st.markdown(f'<img src="{LOGO_URL}" class="sidebar-logo">', unsafe_allow_html=True)
