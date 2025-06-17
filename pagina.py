@@ -302,7 +302,7 @@ def main():
     
     # Lógica de Splash Screen
     if 'app_ready' not in st.session_state:
-        LOGO_URL = "https://i.imgur.com/gJ5Ym2W.png"
+        LOGO_URL = "https://13dejulio.edu.ar/wp-content/uploads/2022/03/Isologotipo-13-de-Julio-400.png"
         st.markdown(f'<div class="splash-container"><img src="{LOGO_URL}" class="splash-logo"><h1 class="splash-title">Bienvenido a tu asistente virtual institucional, TECNOBOT</h1></div>', unsafe_allow_html=True)
         # Cargar recursos mientras se muestra la splash screen
         st.session_state.recursos_ia = cargar_recursos_ia()
