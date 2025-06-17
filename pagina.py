@@ -17,13 +17,13 @@ st.set_page_config(
 )
 
 # --- CONSTANTES ---
-# Se elimina la lista de modelos y se define uno solo para optimizar.
 MODELO_PREDETERMINADO = "llama3-8b-8192"
 SYSTEM_PROMPT = """
 Eres TecnoBot, el asistente virtual del Instituto 13 de Julio. Tu función es responder preguntas sobre el instituto basándote EXCLUSIVAMENTE en el CONTEXTO RELEVANTE que se te proporciona. Si la pregunta es personal (ej: 'mis notas'), usa los datos personales del usuario que también se incluyen en el contexto. No puedes usar conocimiento externo. Si no tienes la información, indica amablemente que no puedes responder y sugiere contactar a secretaría. Sé siempre amable y servicial.
 """
 CODIGO_SECRETO_PROFESOR = "PROFESOR2025"
 CODIGO_SECRETO_AUTORIDAD = "AUTORIDAD2025"
+DOMINIO_INSTITUCIONAL = "@13dejulio.edu.ar" # Dominio permitido para el registro
 
 # --- FUNCIONES DE FIREBASE (CON API REST) ---
 
@@ -125,26 +125,53 @@ def generar_titulo_chat(cliente_groq, primer_mensaje):
 # --- LÓGICA DE INTERFAZ (UI) ---
 
 def aplicar_estilos_css():
-    st.markdown("""
+    st.markdown(f"""
     <style>
-        /* Ocultar elementos de Streamlit que no queremos */
-        .main > div:first-child { padding-top: 0rem; }
-        header, [data-testid="stToolbar"] { display: none !important; }
-        /* El resto del CSS va aquí, sin cambios */
-        @keyframes pulse { 0%{box-shadow:0 0 10px #a1c9f4} 50%{box-shadow:0 0 25px #a1c9f4} 100%{box-shadow:0 0 10px #a1c9f4} }
-        @keyframes fadeIn { from{opacity:0;transform:translateY(20px)} to{opacity:1;transform:translateY(0)} }
-        @keyframes thinking-pulse { 0%{opacity:0.7} 50%{opacity:1} 100%{opacity:0.7} }
-        .stApp { background-color:#2d2a4c; background-image:repeating-linear-gradient(45deg,rgba(255,255,255,0.03) 1px,transparent 1px,transparent 20px),repeating-linear-gradient(-45deg,rgba(161,201,244,0.05) 1px,transparent 1px,transparent 20px),linear-gradient(180deg,#2d2a4c 0%,#4f4a7d 100%); }
-        .main-container { animation:fadeIn 0.8s ease-in-out; max-width:900px; margin:auto; padding: 2rem 1rem; }
-        .login-container { max-width: 450px; margin: auto; padding-top: 5rem; }
-        [data-testid="stSidebar"] { border-right:2px solid #a1c9f4; background-color:#2d2a4c; }
-        .sidebar-logo { width:120px; height:120px; border-radius:50%; border:3px solid #a1c9f4; display:block; margin:2rem auto; animation:pulse 4s infinite ease-in-out; }
-        h1 { color:#e6e6fa; text-shadow:0 0 8px rgba(161,201,244,0.7); text-align:center; }
-        .chat-wrapper { border:2px solid #4f4a7d; box-shadow:0 0 20px -5px #a1c9f4; border-radius:20px; background-color:rgba(45,42,76,0.8); padding:1rem; margin-top:1rem; }
-        [data-testid="stChatMessage"] { animation:fadeIn 0.4s ease-out; }
-        .thinking-indicator { font-style:italic; color:rgba(230,230,250,0.8); animation:thinking-pulse 1.5s infinite; }
-        .stButton>button { width: 100%; margin-bottom: 5px; }
-        @media (max-width:768px) { .main-container, .login-container { padding-left:1rem!important;padding-right:1rem!important } h1{font-size:1.8rem} .sidebar-logo{width:80px;height:80px} }
+        /* --- DEFINICIÓN DE ANIMACIONES --- */
+        @keyframes pulse {{ 0%{{box-shadow:0 0 10px #a1c9f4}} 50%{{box-shadow:0 0 25px #a1c9f4}} 100%{{box-shadow:0 0 10px #a1c9f4}} }}
+        @keyframes fadeIn {{ from{{opacity:0;transform:translateY(20px)}} to{{opacity:1;transform:translateY(0)}} }}
+        @keyframes thinking-pulse {{ 0%{{opacity:0.7}} 50%{{opacity:1}} 100%{{opacity:0.7}} }}
+
+        /* --- ESTILOS GENERALES --- */
+        .stApp {{
+            background-color:#2d2a4c;
+            background-image:repeating-linear-gradient(45deg,rgba(255,255,255,0.03) 1px,transparent 1px,transparent 20px),repeating-linear-gradient(-45deg,rgba(161,201,244,0.05) 1px,transparent 1px,transparent 20px),linear-gradient(180deg,#2d2a4c 0%,#4f4a7d 100%);
+        }}
+        .main > div:first-child {{ padding-top: 0rem; }}
+        header, [data-testid="stToolbar"] {{ display: none !important; }}
+
+        /* --- PANTALLA DE BIENVENIDA --- */
+        .splash-container {{ display:flex; flex-direction:column; justify-content:center; align-items:center; position:fixed; top:0; left:0; width:100vw; height:100vh; z-index:9999; animation:fadeIn 1.5s ease-in-out; }}
+        .splash-logo {{ width:180px; height:180px; border-radius:50%; margin-bottom:2rem; animation:pulse 3s infinite; }}
+        .splash-title {{ font-size:2.5rem; color:#e6e6fa; text-shadow:0 0 10px rgba(161,201,244,0.7); }}
+
+        /* --- APP PRINCIPAL --- */
+        .main-container {{ animation:fadeIn 0.8s ease-in-out; max-width:900px; margin:auto; padding:2rem 1rem; }}
+        .login-container {{ max-width: 450px; margin: auto; padding-top: 5rem; }}
+        [data-testid="stSidebar"] {{ border-right:2px solid #a1c9f4; background-color:#2d2a4c; }}
+        .sidebar-logo {{ width:120px; height:120px; border-radius:50%; border:3px solid #a1c9f4; display:block; margin:2rem auto; animation:pulse 4s infinite ease-in-out; }}
+        h1 {{ color:#e6e6fa; text-shadow:0 0 8px rgba(161,201,244,0.7); text-align:center; }}
+        .chat-wrapper {{ border:2px solid #4f4a7d; box-shadow:0 0 20px -5px #a1c9f4; border-radius:20px; background-color:rgba(45,42,76,0.8); padding:1rem; margin-top:1rem; }}
+        [data-testid="stChatMessage"] {{ animation:fadeIn 0.4s ease-out; }}
+        .thinking-indicator {{ font-style:italic; color:rgba(230,230,250,0.8); animation:thinking-pulse 1.5s infinite; }}
+        .stButton>button {{ width: 100%; margin-bottom: 5px; }}
+        
+        /* --- DISEÑO RESPONSIVO (CELULARES) --- */
+        @media (max-width: 768px) {{
+            .main-container, .login-container {{ padding: 1rem 0.5rem !important; }}
+            .splash-logo {{ width: 120px; height: 120px; }}
+            .splash-title {{ font-size: 1.8rem; text-align: center; }}
+            /* Ajuste clave: el contenedor del chat ocupa una altura flexible */
+            .chat-wrapper {{ 
+                margin-top: 0.5rem; 
+                padding: 0.5rem;
+            }}
+            .st-emotion-cache-1fplz1o {{ /* Selector específico para el contenedor scrolleable */
+                height: 65vh !important; /* Ocupa el 65% de la altura de la pantalla */
+            }}
+            h1 {{ font-size: 1.8rem; padding-top: 0; }}
+            .sidebar-logo {{ width: 80px; height: 80px; }}
+        }}
     </style>
     """, unsafe_allow_html=True)
 
@@ -177,11 +204,15 @@ def render_login_page():
         st.subheader("Crear una Cuenta")
         nombre = st.text_input("Nombre", key="reg_nombre")
         apellido = st.text_input("Apellido", key="reg_apellido")
-        reg_email = st.text_input("Email", key="reg_email")
+        reg_email = st.text_input("Email Institucional", key="reg_email", help=f"Debe ser una cuenta con dominio {DOMINIO_INSTITUCIONAL}")
         reg_password = st.text_input("Contraseña", type="password", key="reg_pass")
         rol_code = st.text_input("Código de Rol (dejar en blanco si eres alumno)", type="password", key="reg_code")
         
         if st.button("Registrarse", key="reg_button", use_container_width=True):
+            # --- NUEVA VALIDACIÓN DE EMAIL ---
+            if not reg_email.endswith(DOMINIO_INSTITUCIONAL):
+                st.error(f"Registro no permitido. Debes usar un correo institucional que termine en {DOMINIO_INSTITUCIONAL}")
+                return
             if not all([nombre, apellido, reg_email, reg_password]):
                 st.warning("Por favor, completa todos los campos obligatorios.")
                 return
@@ -194,24 +225,19 @@ def render_login_page():
                 uid = response['localId']
                 id_token = response['idToken']
                 legajo = str(int(time.time() * 100))[-6:]
-                
                 datos_usuario = {"nombre": nombre, "apellido": apellido, "email": reg_email, "rol": rol, "legajo": legajo}
-                
                 write_response = firebase_db_call('put', f"{coleccion}/{uid}", datos_usuario, id_token)
-                
                 if write_response is not None:
                     st.success(f"✅ ¡Registro exitoso! Tu N° de legajo es {legajo}. Ahora puedes iniciar sesión.")
-                    st.balloons()
-                    time.sleep(4)
-                    st.rerun()
+                    st.balloons(); time.sleep(4); st.rerun()
                 else:
-                    st.error("Error: Tu cuenta fue creada, pero no se pudo guardar tu perfil. Por favor, contacta a un administrador.")
+                    st.error("Error: Tu cuenta fue creada, pero no se pudo guardar tu perfil.")
             else:
                 st.error("No se pudo registrar. El email ya podría estar en uso.")
     st.markdown('</div>', unsafe_allow_html=True)
 
 def render_chat_ui(cliente_groq, modelo_embeddings, documentos_planos, indice_embeddings):
-    LOGO_URL = "https://i.imgur.com/gJ5Ym2W.png"
+    LOGO_URL = "https://13dejulio.edu.ar/wp-content/uploads/2022/03/Isologotipo-13-de-Julio-400.png"
     st.markdown('<div class="main-container">', unsafe_allow_html=True)
     with st.sidebar:
         st.markdown(f'<img src="{LOGO_URL}" class="sidebar-logo">', unsafe_allow_html=True)
@@ -226,14 +252,13 @@ def render_chat_ui(cliente_groq, modelo_embeddings, documentos_planos, indice_em
                     st.session_state.active_chat_id = chat_id; st.rerun()
         else: st.write("No hay chats recientes.")
         st.markdown("---")
-        # Se elimina el selector de modelo de la UI
         if st.button("Cerrar Sesión", use_container_width=True):
             for key in list(st.session_state.keys()): del st.session_state[key]
             st.rerun()
     st.title("🎓 Chatbot del Instituto 13 de Julio")
     active_chat = st.session_state.chat_history.get(st.session_state.active_chat_id, {"mensajes": []})
     st.markdown('<div class="chat-wrapper">', unsafe_allow_html=True)
-    chat_container = st.container(height=500)
+    chat_container = st.container() # Altura gestionada por CSS en celulares
     with chat_container:
         for msg in active_chat["mensajes"]:
             with st.chat_message(msg["role"], avatar="🤖" if msg["role"] == "assistant" else "🧑‍💻"):
@@ -275,15 +300,13 @@ def main():
         if 'recursos_cargados' not in st.session_state:
             with st.spinner("Cargando tu sesión y el motor de IA..."):
                 if not st.session_state.get('guest_mode', False):
-                    user_uid = st.session_state.user_uid
-                    user_token = st.session_state.user_token
-                    user_data = None
+                    user_uid = st.session_state.user_uid; user_token = st.session_state.user_token; user_data = None
                     for coleccion in ["alumnos", "profesores", "autoridades"]:
                         data = firebase_db_call('get', f"{coleccion}/{user_uid}", token=user_token)
                         if data: user_data = data; break
                     if user_data is None:
-                        st.error("Error: No se encontró tu perfil en la base de datos.")
-                        st.session_state.logged_in = False; time.sleep(4); st.rerun(); st.stop()
+                        st.error("Error: No se encontró tu perfil. Por favor, contacta al administrador o regístrate de nuevo.")
+                        st.session_state.logged_in = False; time.sleep(5); st.rerun(); st.stop()
                     st.session_state.user_data = user_data
                     st.session_state.chat_history = user_data.get("chats", {})
                 else:
