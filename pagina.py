@@ -163,22 +163,37 @@ def render_login_page():
                 st.rerun()
             else: st.error("Email o contraseña incorrectos.")
     with register_tab:
-        reg_email = st.text_input("Email", key="reg_email")
-        reg_password = st.text_input("Contraseña", type="password", key="reg_pass")
+        st.subheader("Crear una Cuenta")
         nombre = st.text_input("Nombre", key="reg_nombre")
         apellido = st.text_input("Apellido", key="reg_apellido")
-        legajo = st.text_input("N° de Legajo", key="reg_legajo")
-        rol_code = st.text_input("Código de Rol", type="password", key="reg_code")
+        reg_email = st.text_input("Email", key="reg_email")
+        reg_password = st.text_input("Contraseña", type="password", key="reg_pass")
+        rol_code = st.text_input("Código de Rol (dejar en blanco si eres alumno)", type="password", key="reg_code")
+        
         if st.button("Registrarse", key="reg_button", use_container_width=True):
+            if not all([nombre, apellido, reg_email, reg_password]):
+                st.warning("Por favor, completa todos los campos obligatorios.")
+                return
+
             rol, coleccion = ("profesor", "profesores") if rol_code == CODIGO_SECRETO_PROFESOR else \
                              ("autoridad", "autoridades") if rol_code == CODIGO_SECRETO_AUTORIDAD else ("alumno", "alumnos")
+            
             response = firebase_api_auth("accounts:signUp", {"email": reg_email, "password": reg_password, "returnSecureToken": True})
             if "localId" in response:
                 uid = response['localId']
+                legajo = str(int(time.time() * 100))[-6:] # Genera un legajo simple
+                
                 datos_usuario = {"nombre": nombre, "apellido": apellido, "email": reg_email, "rol": rol, "legajo": legajo}
                 firebase_db_call('put', f"{coleccion}/{uid}", datos_usuario, response['idToken'])
-                st.success("¡Registro exitoso! Ahora puedes iniciar sesión."); time.sleep(2); st.rerun()
-            else: st.error("No se pudo registrar. El email ya podría estar en uso.")
+
+                # --- MENSAJE DE ÉXITO MEJORADO ---
+                st.success("✅ ¡Registro exitoso! Tu cuenta ha sido creada.")
+                st.info(f"**IMPORTANTE:** Tu número de legajo asignado es **{legajo}**. Anótalo, lo necesitarás para futuras consultas.")
+                st.balloons()
+                time.sleep(5) # Pausa de 5 segundos para que el usuario pueda leer
+                st.rerun()
+            else:
+                st.error("No se pudo registrar. El email ya podría estar en uso.")
     st.markdown('</div>', unsafe_allow_html=True)
 
 def render_chat_ui(cliente_groq, modelo_embeddings, documentos_planos, indice_embeddings):
