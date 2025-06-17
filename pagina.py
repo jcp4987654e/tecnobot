@@ -104,7 +104,7 @@ def buscar_contexto(query, _modelo, documentos, embeddings_corpus, datos_usuario
                     contexto_publico += f"- {texto}\n"
                     textos_ya_anadidos.add(texto)
     contexto_privado = ""
-    if datos_usuario:
+    if datos_usuario and not st.session_state.get('guest_mode', False):
         contexto_privado = "\n--- DATOS PERSONALES DEL USUARIO ---\n" + json.dumps({k: v for k, v in datos_usuario.items() if k != 'chats'})
     return (contexto_publico + contexto_privado) or "No se encontró información relevante."
 
@@ -126,14 +126,13 @@ def generar_titulo_chat(cliente_groq, primer_mensaje):
 def aplicar_estilos_css():
     st.markdown("""
     <style>
-        /* Ocultar elementos de Streamlit que no queremos */
-        .main > div:first-child { padding-top: 0rem; }
-        header, [data-testid="stToolbar"] { display: none !important; }
-        /* El resto del CSS va aquí, sin cambios */
+        /* ... (Todo el código CSS va aquí, sin cambios) ... */
         @keyframes pulse { 0%{box-shadow:0 0 10px #a1c9f4} 50%{box-shadow:0 0 25px #a1c9f4} 100%{box-shadow:0 0 10px #a1c9f4} }
         @keyframes fadeIn { from{opacity:0;transform:translateY(20px)} to{opacity:1;transform:translateY(0)} }
         @keyframes thinking-pulse { 0%{opacity:0.7} 50%{opacity:1} 100%{opacity:0.7} }
         .stApp { background-color:#2d2a4c; background-image:repeating-linear-gradient(45deg,rgba(255,255,255,0.03) 1px,transparent 1px,transparent 20px),repeating-linear-gradient(-45deg,rgba(161,201,244,0.05) 1px,transparent 1px,transparent 20px),linear-gradient(180deg,#2d2a4c 0%,#4f4a7d 100%); }
+        .main > div:first-child { padding-top: 0rem; }
+        header, [data-testid="stToolbar"] { display: none !important; }
         .main-container { animation:fadeIn 0.8s ease-in-out; max-width:900px; margin:auto; padding: 2rem 1rem; }
         .login-container { max-width: 450px; margin: auto; padding-top: 5rem; }
         [data-testid="stSidebar"] { border-right:2px solid #a1c9f4; background-color:#2d2a4c; }
@@ -150,7 +149,16 @@ def aplicar_estilos_css():
 def render_login_page():
     st.markdown('<div class="login-container">', unsafe_allow_html=True)
     st.title("Bienvenido a TecnoBot")
+    
+    if st.button("Ingresar como Invitado", use_container_width=True):
+        st.session_state.logged_in = True
+        st.session_state.guest_mode = True
+        st.session_state.user_data = {"nombre": "Invitado", "rol": "invitado", "chats": {}}
+        st.rerun()
+
+    st.markdown("---")
     login_tab, register_tab = st.tabs(["Iniciar Sesión", "Registrarse"])
+    
     with login_tab:
         email = st.text_input("Email", key="login_email")
         password = st.text_input("Contraseña", type="password", key="login_pass")
@@ -160,6 +168,7 @@ def render_login_page():
                 st.session_state.logged_in = True
                 st.session_state.user_token = response['idToken']
                 st.session_state.user_uid = response['localId']
+                st.session_state.guest_mode = False
                 st.rerun()
             else: st.error("Email o contraseña incorrectos.")
     with register_tab:
@@ -181,16 +190,22 @@ def render_login_page():
             response = firebase_api_auth("accounts:signUp", {"email": reg_email, "password": reg_password, "returnSecureToken": True})
             if "localId" in response:
                 uid = response['localId']
+                id_token = response['idToken']
                 legajo = str(int(time.time() * 100))[-6:]
                 
                 datos_usuario = {"nombre": nombre, "apellido": apellido, "email": reg_email, "rol": rol, "legajo": legajo}
-                firebase_db_call('put', f"{coleccion}/{uid}", datos_usuario, response['idToken'])
-
-                st.success("✅ ¡Registro exitoso! Tu cuenta ha sido creada.")
-                st.info(f"**IMPORTANTE:** Tu número de legajo asignado es **{legajo}**. Anótalo.")
-                st.balloons()
-                time.sleep(5)
-                st.rerun()
+                
+                # Guardar datos en la base de datos
+                write_response = firebase_db_call('put', f"{coleccion}/{uid}", datos_usuario, id_token)
+                
+                # Verificación para asegurar que los datos se guardaron
+                if write_response is not None:
+                    st.success(f"✅ ¡Registro exitoso! Tu N° de legajo es {legajo}. Ahora puedes iniciar sesión.")
+                    st.balloons()
+                    time.sleep(4)
+                    st.rerun()
+                else:
+                    st.error("Error: Tu cuenta fue creada, pero no se pudo guardar tu perfil. Por favor, contacta a un administrador.")
             else:
                 st.error("No se pudo registrar. El email ya podría estar en uso.")
     st.markdown('</div>', unsafe_allow_html=True)
@@ -239,7 +254,8 @@ def render_chat_ui(cliente_groq, modelo_embeddings, documentos_planos, indice_em
                 full_response = placeholder.write_stream(response_stream)
         active_chat["mensajes"].append({"role": "assistant", "content": full_response})
         if len(active_chat["mensajes"]) == 2: active_chat["titulo"] = generar_titulo_chat(cliente_groq, prompt)
-        firebase_db_call('put', f"{user_data['rol'] + 's'}/{st.session_state.user_uid}/chats/{st.session_state.active_chat_id}", active_chat, st.session_state.user_token)
+        if not st.session_state.get('guest_mode', False):
+            firebase_db_call('put', f"{user_data['rol'] + 's'}/{st.session_state.user_uid}/chats/{st.session_state.active_chat_id}", active_chat, st.session_state.user_token)
         st.rerun()
 
 def start_new_chat():
@@ -257,32 +273,28 @@ def main():
     else:
         if 'recursos_cargados' not in st.session_state:
             with st.spinner("Cargando tu sesión y el motor de IA..."):
-                user_uid = st.session_state.user_uid
-                user_token = st.session_state.user_token
-                user_data = None
-                for coleccion in ["alumnos", "profesores", "autoridades"]:
-                    data = firebase_db_call('get', f"{coleccion}/{user_uid}", token=user_token)
-                    if data:
-                        user_data = data
-                        break
+                if not st.session_state.get('guest_mode', False):
+                    user_uid = st.session_state.user_uid
+                    user_token = st.session_state.user_token
+                    user_data = None
+                    for coleccion in ["alumnos", "profesores", "autoridades"]:
+                        data = firebase_db_call('get', f"{coleccion}/{user_uid}", token=user_token)
+                        if data: user_data = data; break
+                    if user_data is None:
+                        st.error("Error: No se encontró tu perfil en la base de datos.")
+                        st.session_state.logged_in = False; time.sleep(4); st.rerun(); st.stop()
+                    st.session_state.user_data = user_data
+                    st.session_state.chat_history = user_data.get("chats", {})
+                else:
+                    st.session_state.user_data = {"nombre": "Invitado", "rol": "invitado"}
+                    st.session_state.chat_history = {}
                 
-                # --- BLOQUE DE VERIFICACIÓN MEJORADO ---
-                if user_data is None:
-                    st.error("Error: No se encontró tu perfil en la base de datos. Esto puede ocurrir si el registro no se completó. Por favor, contacta al administrador o intenta registrarte de nuevo.")
-                    # Forzar cierre de sesión para evitar bucle de error
-                    st.session_state.logged_in = False
-                    st.session_state.user_data = None
-                    time.sleep(5)
-                    st.rerun()
-                    st.stop()
-                
-                st.session_state.user_data = user_data
-                st.session_state.chat_history = user_data.get("chats", {}) if user_data else {}
                 modelo_embeddings, documentos_planos, indice_embeddings = cargar_recursos_ia()
                 if modelo_embeddings and documentos_planos and indice_embeddings is not None:
                     st.session_state.modelo_embeddings, st.session_state.documentos_planos, st.session_state.indice_embeddings = modelo_embeddings, documentos_planos, indice_embeddings
                     st.session_state.recursos_cargados = True
                 else: st.error("No se pudieron cargar los recursos de IA."); st.stop()
+                
                 if not st.session_state.chat_history: start_new_chat()
                 else: st.session_state.active_chat_id = max(st.session_state.chat_history.items(), key=lambda item: item[1]['timestamp'])[0]
                 st.rerun()
