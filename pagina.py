@@ -237,7 +237,7 @@ def render_login_page():
     st.markdown('</div>', unsafe_allow_html=True)
 
 def render_chat_ui(cliente_groq, modelo_embeddings, documentos_planos, indice_embeddings):
-    LOGO_URL = "https://i.imgur.com/gJ5Ym2W.png"
+    LOGO_URL = "https://13dejulio.edu.ar/wp-content/uploads/2022/03/Isologotipo-13-de-Julio-400.png"
     # Lógica para mostrar la animación del sidebar solo una vez al entrar al chat
     if 'sidebar_hint_shown' not in st.session_state:
         st.markdown('<div class="sidebar-pointer">➔</div>', unsafe_allow_html=True)
