@@ -12,7 +12,7 @@ import requests # Usamos requests para comunicarnos directamente con Firebase
 # --- CONFIGURACIÓN INICIAL ---
 st.set_page_config(
     page_title="Chatbot del Instituto 13 de Julio",
-    page_icon="🎓",
+    page_icon="�",
     layout="wide"
 )
 
@@ -131,6 +131,12 @@ def aplicar_estilos_css():
         @keyframes pulse {{ 0%{{box-shadow:0 0 10px #a1c9f4}} 50%{{box-shadow:0 0 25px #a1c9f4}} 100%{{box-shadow:0 0 10px #a1c9f4}} }}
         @keyframes fadeIn {{ from{{opacity:0;transform:translateY(20px)}} to{{opacity:1;transform:translateY(0)}} }}
         @keyframes thinking-pulse {{ 0%{{opacity:0.7}} 50%{{opacity:1}} 100%{{opacity:0.7}} }}
+        @keyframes pointAndFade {{
+            0% {{ opacity: 0; transform: scale(0.8); }}
+            25% {{ opacity: 1; transform: scale(1.1); }}
+            75% {{ opacity: 1; transform: scale(1.1); }}
+            100% {{ opacity: 0; transform: scale(0.8); }}
+        }}
 
         /* --- ESTILOS GENERALES --- */
         .stApp {{
@@ -143,7 +149,7 @@ def aplicar_estilos_css():
         /* --- PANTALLA DE BIENVENIDA --- */
         .splash-container {{ display:flex; flex-direction:column; justify-content:center; align-items:center; position:fixed; top:0; left:0; width:100vw; height:100vh; z-index:9999; animation:fadeIn 1.5s ease-in-out; }}
         .splash-logo {{ width:180px; height:180px; border-radius:50%; margin-bottom:2rem; animation:pulse 3s infinite; }}
-        .splash-title {{ font-size:2.5rem; color:#e6e6fa; text-shadow:0 0 10px rgba(161,201,244,0.7); }}
+        .splash-title {{ font-size:2.5rem; color:#e6e6fa; text-shadow:0 0 10px rgba(161,201,244,0.7); text-align: center; padding: 0 1rem;}}
 
         /* --- APP PRINCIPAL --- */
         .main-container {{ animation:fadeIn 0.8s ease-in-out; max-width:900px; margin:auto; padding:2rem 1rem; }}
@@ -155,22 +161,30 @@ def aplicar_estilos_css():
         [data-testid="stChatMessage"] {{ animation:fadeIn 0.4s ease-out; }}
         .thinking-indicator {{ font-style:italic; color:rgba(230,230,250,0.8); animation:thinking-pulse 1.5s infinite; }}
         .stButton>button {{ width: 100%; margin-bottom: 5px; }}
+
+        /* --- NUEVA ANIMACIÓN PARA SIDEBAR EN MÓVILES --- */
+        .sidebar-pointer {{
+            display: none; /* Oculto por defecto en PC */
+            position: fixed;
+            top: 10px;
+            left: 10px;
+            z-index: 10001; /* Por encima de todo */
+            color: white;
+            font-size: 2.5rem;
+            text-shadow: 0 0 8px #a1c9f4;
+            animation: pointAndFade 1.5s ease-in-out forwards; /* La animación que pediste */
+        }}
         
         /* --- DISEÑO RESPONSIVO (CELULARES) --- */
         @media (max-width: 768px) {{
             .main-container, .login-container {{ padding: 1rem 0.5rem !important; }}
             .splash-logo {{ width: 120px; height: 120px; }}
-            .splash-title {{ font-size: 1.8rem; text-align: center; }}
-            /* Ajuste clave: el contenedor del chat ocupa una altura flexible */
-            .chat-wrapper {{ 
-                margin-top: 0.5rem; 
-                padding: 0.5rem;
-            }}
-            .st-emotion-cache-1fplz1o {{ /* Selector específico para el contenedor scrolleable */
-                height: 65vh !important; /* Ocupa el 65% de la altura de la pantalla */
-            }}
+            .splash-title {{ font-size: 1.5rem; text-align: center; }}
+            .chat-wrapper {{ margin-top: 0.5rem; padding: 0.5rem; }}
+            .st-emotion-cache-1fplz1o {{ height: 65vh !important; }}
             h1 {{ font-size: 1.8rem; padding-top: 0; }}
             .sidebar-logo {{ width: 80px; height: 80px; }}
+            .sidebar-pointer {{ display: block; }} /* Solo se muestra en móviles */
         }}
     </style>
     """, unsafe_allow_html=True)
@@ -178,26 +192,20 @@ def aplicar_estilos_css():
 def render_login_page():
     st.markdown('<div class="login-container">', unsafe_allow_html=True)
     st.title("Bienvenido a TecnoBot")
-    
     if st.button("Ingresar como Invitado", use_container_width=True):
-        st.session_state.logged_in = True
-        st.session_state.guest_mode = True
+        st.session_state.logged_in = True; st.session_state.guest_mode = True
         st.session_state.user_data = {"nombre": "Invitado", "rol": "invitado", "chats": {}}
         st.rerun()
-
     st.markdown("---")
     login_tab, register_tab = st.tabs(["Iniciar Sesión", "Registrarse"])
-    
     with login_tab:
         email = st.text_input("Email", key="login_email")
         password = st.text_input("Contraseña", type="password", key="login_pass")
         if st.button("Ingresar", key="login_button", use_container_width=True):
             response = firebase_api_auth("accounts:signInWithPassword", {"email": email, "password": password, "returnSecureToken": True})
             if "localId" in response:
-                st.session_state.logged_in = True
-                st.session_state.user_token = response['idToken']
-                st.session_state.user_uid = response['localId']
-                st.session_state.guest_mode = False
+                st.session_state.logged_in = True; st.session_state.user_token = response['idToken']
+                st.session_state.user_uid = response['localId']; st.session_state.guest_mode = False
                 st.rerun()
             else: st.error("Email o contraseña incorrectos.")
     with register_tab:
@@ -207,37 +215,32 @@ def render_login_page():
         reg_email = st.text_input("Email Institucional", key="reg_email", help=f"Debe ser una cuenta con dominio {DOMINIO_INSTITUCIONAL}")
         reg_password = st.text_input("Contraseña", type="password", key="reg_pass")
         rol_code = st.text_input("Código de Rol (dejar en blanco si eres alumno)", type="password", key="reg_code")
-        
         if st.button("Registrarse", key="reg_button", use_container_width=True):
-            # --- NUEVA VALIDACIÓN DE EMAIL ---
             if not reg_email.endswith(DOMINIO_INSTITUCIONAL):
-                st.error(f"Registro no permitido. Debes usar un correo institucional que termine en {DOMINIO_INSTITUCIONAL}")
-                return
+                st.error(f"Registro no permitido. Debes usar un correo institucional."); return
             if not all([nombre, apellido, reg_email, reg_password]):
-                st.warning("Por favor, completa todos los campos obligatorios.")
-                return
-
+                st.warning("Por favor, completa todos los campos obligatorios."); return
             rol, coleccion = ("profesor", "profesores") if rol_code == CODIGO_SECRETO_PROFESOR else \
                              ("autoridad", "autoridades") if rol_code == CODIGO_SECRETO_AUTORIDAD else ("alumno", "alumnos")
-            
             response = firebase_api_auth("accounts:signUp", {"email": reg_email, "password": reg_password, "returnSecureToken": True})
             if "localId" in response:
-                uid = response['localId']
-                id_token = response['idToken']
+                uid, id_token = response['localId'], response['idToken']
                 legajo = str(int(time.time() * 100))[-6:]
                 datos_usuario = {"nombre": nombre, "apellido": apellido, "email": reg_email, "rol": rol, "legajo": legajo}
                 write_response = firebase_db_call('put', f"{coleccion}/{uid}", datos_usuario, id_token)
                 if write_response is not None:
-                    st.success(f"✅ ¡Registro exitoso! Tu N° de legajo es {legajo}. Ahora puedes iniciar sesión.")
-                    st.balloons(); time.sleep(4); st.rerun()
-                else:
-                    st.error("Error: Tu cuenta fue creada, pero no se pudo guardar tu perfil.")
-            else:
-                st.error("No se pudo registrar. El email ya podría estar en uso.")
+                    st.success(f"✅ ¡Registro exitoso! Tu N° de legajo es {legajo}."); st.balloons(); time.sleep(4); st.rerun()
+                else: st.error("Error: Tu cuenta fue creada, pero no se pudo guardar tu perfil.")
+            else: st.error("No se pudo registrar. El email ya podría estar en uso.")
     st.markdown('</div>', unsafe_allow_html=True)
 
 def render_chat_ui(cliente_groq, modelo_embeddings, documentos_planos, indice_embeddings):
-    LOGO_URL = "https://13dejulio.edu.ar/wp-content/uploads/2022/03/Isologotipo-13-de-Julio-400.png"
+    LOGO_URL = "https://i.imgur.com/gJ5Ym2W.png"
+    # Lógica para mostrar la animación del sidebar solo una vez
+    if 'sidebar_hint_shown' not in st.session_state:
+        st.markdown('<div class="sidebar-pointer">➔</div>', unsafe_allow_html=True)
+        st.session_state.sidebar_hint_shown = True
+
     st.markdown('<div class="main-container">', unsafe_allow_html=True)
     with st.sidebar:
         st.markdown(f'<img src="{LOGO_URL}" class="sidebar-logo">', unsafe_allow_html=True)
@@ -258,7 +261,7 @@ def render_chat_ui(cliente_groq, modelo_embeddings, documentos_planos, indice_em
     st.title("🎓 Chatbot del Instituto 13 de Julio")
     active_chat = st.session_state.chat_history.get(st.session_state.active_chat_id, {"mensajes": []})
     st.markdown('<div class="chat-wrapper">', unsafe_allow_html=True)
-    chat_container = st.container() # Altura gestionada por CSS en celulares
+    chat_container = st.container()
     with chat_container:
         for msg in active_chat["mensajes"]:
             with st.chat_message(msg["role"], avatar="🤖" if msg["role"] == "assistant" else "🧑‍💻"):
@@ -300,18 +303,17 @@ def main():
         if 'recursos_cargados' not in st.session_state:
             with st.spinner("Cargando tu sesión y el motor de IA..."):
                 if not st.session_state.get('guest_mode', False):
-                    user_uid = st.session_state.user_uid; user_token = st.session_state.user_token; user_data = None
+                    user_uid, user_token = st.session_state.user_uid, st.session_state.user_token
+                    user_data = None
                     for coleccion in ["alumnos", "profesores", "autoridades"]:
                         data = firebase_db_call('get', f"{coleccion}/{user_uid}", token=user_token)
                         if data: user_data = data; break
                     if user_data is None:
-                        st.error("Error: No se encontró tu perfil. Por favor, contacta al administrador o regístrate de nuevo.")
-                        st.session_state.logged_in = False; time.sleep(5); st.rerun(); st.stop()
+                        st.error("Error: No se encontró tu perfil."); st.session_state.logged_in = False; time.sleep(5); st.rerun(); st.stop()
                     st.session_state.user_data = user_data
                     st.session_state.chat_history = user_data.get("chats", {})
                 else:
-                    st.session_state.user_data = {"nombre": "Invitado", "rol": "invitado"}
-                    st.session_state.chat_history = {}
+                    st.session_state.user_data = {"nombre": "Invitado", "rol": "invitado"}; st.session_state.chat_history = {}
                 
                 modelo_embeddings, documentos_planos, indice_embeddings = cargar_recursos_ia()
                 if modelo_embeddings and documentos_planos and indice_embeddings is not None:
