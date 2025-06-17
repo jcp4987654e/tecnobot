@@ -181,16 +181,15 @@ def render_login_page():
             response = firebase_api_auth("accounts:signUp", {"email": reg_email, "password": reg_password, "returnSecureToken": True})
             if "localId" in response:
                 uid = response['localId']
-                legajo = str(int(time.time() * 100))[-6:] # Genera un legajo simple
+                legajo = str(int(time.time() * 100))[-6:]
                 
                 datos_usuario = {"nombre": nombre, "apellido": apellido, "email": reg_email, "rol": rol, "legajo": legajo}
                 firebase_db_call('put', f"{coleccion}/{uid}", datos_usuario, response['idToken'])
 
-                # --- MENSAJE DE ÉXITO MEJORADO ---
                 st.success("✅ ¡Registro exitoso! Tu cuenta ha sido creada.")
-                st.info(f"**IMPORTANTE:** Tu número de legajo asignado es **{legajo}**. Anótalo, lo necesitarás para futuras consultas.")
+                st.info(f"**IMPORTANTE:** Tu número de legajo asignado es **{legajo}**. Anótalo.")
                 st.balloons()
-                time.sleep(5) # Pausa de 5 segundos para que el usuario pueda leer
+                time.sleep(5)
                 st.rerun()
             else:
                 st.error("No se pudo registrar. El email ya podría estar en uso.")
@@ -263,7 +262,20 @@ def main():
                 user_data = None
                 for coleccion in ["alumnos", "profesores", "autoridades"]:
                     data = firebase_db_call('get', f"{coleccion}/{user_uid}", token=user_token)
-                    if data: user_data = data; break
+                    if data:
+                        user_data = data
+                        break
+                
+                # --- BLOQUE DE VERIFICACIÓN MEJORADO ---
+                if user_data is None:
+                    st.error("Error: No se encontró tu perfil en la base de datos. Esto puede ocurrir si el registro no se completó. Por favor, contacta al administrador o intenta registrarte de nuevo.")
+                    # Forzar cierre de sesión para evitar bucle de error
+                    st.session_state.logged_in = False
+                    st.session_state.user_data = None
+                    time.sleep(5)
+                    st.rerun()
+                    st.stop()
+                
                 st.session_state.user_data = user_data
                 st.session_state.chat_history = user_data.get("chats", {}) if user_data else {}
                 modelo_embeddings, documentos_planos, indice_embeddings = cargar_recursos_ia()
@@ -274,6 +286,7 @@ def main():
                 if not st.session_state.chat_history: start_new_chat()
                 else: st.session_state.active_chat_id = max(st.session_state.chat_history.items(), key=lambda item: item[1]['timestamp'])[0]
                 st.rerun()
+                
         cliente_groq = groq.Groq(api_key=st.secrets["GROQ_API_KEY"])
         render_chat_ui(cliente_groq, st.session_state.modelo_embeddings, st.session_state.documentos_planos, st.session_state.indice_embeddings)
 
