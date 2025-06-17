@@ -12,7 +12,7 @@ import requests # Usamos requests para comunicarnos directamente con Firebase
 # --- CONFIGURACIÓN INICIAL ---
 st.set_page_config(
     page_title="Chatbot del Instituto 13 de Julio",
-    page_icon="�",
+    page_icon="🎓",
     layout="wide"
 )
 
@@ -131,11 +131,13 @@ def aplicar_estilos_css():
         @keyframes pulse {{ 0%{{box-shadow:0 0 10px #a1c9f4}} 50%{{box-shadow:0 0 25px #a1c9f4}} 100%{{box-shadow:0 0 10px #a1c9f4}} }}
         @keyframes fadeIn {{ from{{opacity:0;transform:translateY(20px)}} to{{opacity:1;transform:translateY(0)}} }}
         @keyframes thinking-pulse {{ 0%{{opacity:0.7}} 50%{{opacity:1}} 100%{{opacity:0.7}} }}
+        /* Nueva animación para la flecha del sidebar */
         @keyframes pointAndFade {{
-            0% {{ opacity: 0; transform: scale(0.8); }}
-            25% {{ opacity: 1; transform: scale(1.1); }}
-            75% {{ opacity: 1; transform: scale(1.1); }}
-            100% {{ opacity: 0; transform: scale(0.8); }}
+            0% {{ opacity: 0; transform: translateX(-20px); }}
+            20% {{ opacity: 1; transform: translateX(5px); }}
+            30% {{ transform: translateX(0); }}
+            80% {{ opacity: 1; transform: translateX(0); }}
+            100% {{ opacity: 0; transform: translateX(-20px); }}
         }}
 
         /* --- ESTILOS GENERALES --- */
@@ -164,15 +166,15 @@ def aplicar_estilos_css():
 
         /* --- NUEVA ANIMACIÓN PARA SIDEBAR EN MÓVILES --- */
         .sidebar-pointer {{
-            display: none; /* Oculto por defecto en PC */
+            display: none;
             position: fixed;
             top: 10px;
             left: 10px;
-            z-index: 10001; /* Por encima de todo */
+            z-index: 10001;
             color: white;
             font-size: 2.5rem;
             text-shadow: 0 0 8px #a1c9f4;
-            animation: pointAndFade 1.5s ease-in-out forwards; /* La animación que pediste */
+            animation: pointAndFade 1.5s 1s ease-in-out forwards; /* La animación dura 1.5s y empieza después de 1s */
         }}
         
         /* --- DISEÑO RESPONSIVO (CELULARES) --- */
@@ -235,8 +237,8 @@ def render_login_page():
     st.markdown('</div>', unsafe_allow_html=True)
 
 def render_chat_ui(cliente_groq, modelo_embeddings, documentos_planos, indice_embeddings):
-    LOGO_URL = "https://13dejulio.edu.ar/wp-content/uploads/2022/03/Isologotipo-13-de-Julio-400.png"
-    # Lógica para mostrar la animación del sidebar solo una vez
+    LOGO_URL = "https://i.imgur.com/gJ5Ym2W.png"
+    # Lógica para mostrar la animación del sidebar solo una vez al entrar al chat
     if 'sidebar_hint_shown' not in st.session_state:
         st.markdown('<div class="sidebar-pointer">➔</div>', unsafe_allow_html=True)
         st.session_state.sidebar_hint_shown = True
@@ -297,11 +299,23 @@ def start_new_chat():
 def main():
     aplicar_estilos_css()
     if 'logged_in' not in st.session_state: st.session_state.logged_in = False
+    
+    # Lógica de Splash Screen
+    if 'app_ready' not in st.session_state:
+        LOGO_URL = "https://i.imgur.com/gJ5Ym2W.png"
+        st.markdown(f'<div class="splash-container"><img src="{LOGO_URL}" class="splash-logo"><h1 class="splash-title">Bienvenido a tu asistente virtual institucional, TECNOBOT</h1></div>', unsafe_allow_html=True)
+        # Cargar recursos mientras se muestra la splash screen
+        st.session_state.recursos_ia = cargar_recursos_ia()
+        time.sleep(3)
+        st.session_state.app_ready = True
+        st.rerun()
+
     if not st.session_state.logged_in:
         render_login_page()
     else:
+        # Cargar datos del usuario y chats después del login
         if 'recursos_cargados' not in st.session_state:
-            with st.spinner("Cargando tu sesión y el motor de IA..."):
+            with st.spinner("Cargando tu sesión..."):
                 if not st.session_state.get('guest_mode', False):
                     user_uid, user_token = st.session_state.user_uid, st.session_state.user_token
                     user_data = None
@@ -315,18 +329,18 @@ def main():
                 else:
                     st.session_state.user_data = {"nombre": "Invitado", "rol": "invitado"}; st.session_state.chat_history = {}
                 
-                modelo_embeddings, documentos_planos, indice_embeddings = cargar_recursos_ia()
-                if modelo_embeddings and documentos_planos and indice_embeddings is not None:
-                    st.session_state.modelo_embeddings, st.session_state.documentos_planos, st.session_state.indice_embeddings = modelo_embeddings, documentos_planos, indice_embeddings
-                    st.session_state.recursos_cargados = True
-                else: st.error("No se pudieron cargar los recursos de IA."); st.stop()
+                # Cargar modelos de IA si no están ya en session_state (aunque ya se hizo en splash)
+                if not st.session_state.get('recursos_ia'):
+                    st.session_state.recursos_ia = cargar_recursos_ia()
                 
+                st.session_state.recursos_cargados = True
                 if not st.session_state.chat_history: start_new_chat()
                 else: st.session_state.active_chat_id = max(st.session_state.chat_history.items(), key=lambda item: item[1]['timestamp'])[0]
                 st.rerun()
                 
         cliente_groq = groq.Groq(api_key=st.secrets["GROQ_API_KEY"])
-        render_chat_ui(cliente_groq, st.session_state.modelo_embeddings, st.session_state.documentos_planos, st.session_state.indice_embeddings)
+        modelo_embeddings, documentos_planos, indice_embeddings = st.session_state.recursos_ia
+        render_chat_ui(cliente_groq, modelo_embeddings, documentos_planos, indice_embeddings)
 
 if __name__ == "__main__":
     main()
