@@ -17,7 +17,8 @@ st.set_page_config(
 )
 
 # --- CONSTANTES ---
-MODELOS = ["llama3-8b-8192", "llama3-70b-8192"]
+# Se elimina la lista de modelos y se define uno solo para optimizar.
+MODELO_PREDETERMINADO = "llama3-8b-8192"
 SYSTEM_PROMPT = """
 Eres TecnoBot, el asistente virtual del Instituto 13 de Julio. Tu función es responder preguntas sobre el instituto basándote EXCLUSIVAMENTE en el CONTEXTO RELEVANTE que se te proporciona. Si la pregunta es personal (ej: 'mis notas'), usa los datos personales del usuario que también se incluyen en el contexto. No puedes usar conocimiento externo. Si no tienes la información, indica amablemente que no puedes responder y sugiere contactar a secretaría. Sé siempre amable y servicial.
 """
@@ -108,9 +109,9 @@ def buscar_contexto(query, _modelo, documentos, embeddings_corpus, datos_usuario
         contexto_privado = "\n--- DATOS PERSONALES DEL USUARIO ---\n" + json.dumps({k: v for k, v in datos_usuario.items() if k != 'chats'})
     return (contexto_publico + contexto_privado) or "No se encontró información relevante."
 
-def generar_respuesta_stream(cliente_groq, modelo_seleccionado, historial_chat):
+def generar_respuesta_stream(cliente_groq, historial_chat):
     try:
-        stream = cliente_groq.chat.completions.create(model=modelo_seleccionado, messages=historial_chat, temperature=0.5, max_tokens=1024, stream=True)
+        stream = cliente_groq.chat.completions.create(model=MODELO_PREDETERMINADO, messages=historial_chat, temperature=0.5, max_tokens=1024, stream=True)
         for chunk in stream: yield chunk.choices[0].delta.content or ""
     except Exception as e:
         st.error(f"Ocurrió un error con el modelo de IA: {e}"); yield ""
@@ -126,13 +127,14 @@ def generar_titulo_chat(cliente_groq, primer_mensaje):
 def aplicar_estilos_css():
     st.markdown("""
     <style>
-        /* ... (Todo el código CSS va aquí, sin cambios) ... */
+        /* Ocultar elementos de Streamlit que no queremos */
+        .main > div:first-child { padding-top: 0rem; }
+        header, [data-testid="stToolbar"] { display: none !important; }
+        /* El resto del CSS va aquí, sin cambios */
         @keyframes pulse { 0%{box-shadow:0 0 10px #a1c9f4} 50%{box-shadow:0 0 25px #a1c9f4} 100%{box-shadow:0 0 10px #a1c9f4} }
         @keyframes fadeIn { from{opacity:0;transform:translateY(20px)} to{opacity:1;transform:translateY(0)} }
         @keyframes thinking-pulse { 0%{opacity:0.7} 50%{opacity:1} 100%{opacity:0.7} }
         .stApp { background-color:#2d2a4c; background-image:repeating-linear-gradient(45deg,rgba(255,255,255,0.03) 1px,transparent 1px,transparent 20px),repeating-linear-gradient(-45deg,rgba(161,201,244,0.05) 1px,transparent 1px,transparent 20px),linear-gradient(180deg,#2d2a4c 0%,#4f4a7d 100%); }
-        .main > div:first-child { padding-top: 0rem; }
-        header, [data-testid="stToolbar"] { display: none !important; }
         .main-container { animation:fadeIn 0.8s ease-in-out; max-width:900px; margin:auto; padding: 2rem 1rem; }
         .login-container { max-width: 450px; margin: auto; padding-top: 5rem; }
         [data-testid="stSidebar"] { border-right:2px solid #a1c9f4; background-color:#2d2a4c; }
@@ -195,10 +197,8 @@ def render_login_page():
                 
                 datos_usuario = {"nombre": nombre, "apellido": apellido, "email": reg_email, "rol": rol, "legajo": legajo}
                 
-                # Guardar datos en la base de datos
                 write_response = firebase_db_call('put', f"{coleccion}/{uid}", datos_usuario, id_token)
                 
-                # Verificación para asegurar que los datos se guardaron
                 if write_response is not None:
                     st.success(f"✅ ¡Registro exitoso! Tu N° de legajo es {legajo}. Ahora puedes iniciar sesión.")
                     st.balloons()
@@ -211,7 +211,7 @@ def render_login_page():
     st.markdown('</div>', unsafe_allow_html=True)
 
 def render_chat_ui(cliente_groq, modelo_embeddings, documentos_planos, indice_embeddings):
-    LOGO_URL = "https://13dejulio.edu.ar/wp-content/uploads/2022/03/Isologotipo-13-de-Julio-400.png"
+    LOGO_URL = "https://i.imgur.com/gJ5Ym2W.png"
     st.markdown('<div class="main-container">', unsafe_allow_html=True)
     with st.sidebar:
         st.markdown(f'<img src="{LOGO_URL}" class="sidebar-logo">', unsafe_allow_html=True)
@@ -225,7 +225,8 @@ def render_chat_ui(cliente_groq, modelo_embeddings, documentos_planos, indice_em
                 if st.button(chat_data.get('titulo', 'Chat'), key=chat_id, use_container_width=True):
                     st.session_state.active_chat_id = chat_id; st.rerun()
         else: st.write("No hay chats recientes.")
-        st.markdown("---"); modelo_seleccionado = st.selectbox("Elige tu modelo de IA:", MODELOS, index=1)
+        st.markdown("---")
+        # Se elimina el selector de modelo de la UI
         if st.button("Cerrar Sesión", use_container_width=True):
             for key in list(st.session_state.keys()): del st.session_state[key]
             st.rerun()
@@ -250,7 +251,7 @@ def render_chat_ui(cliente_groq, modelo_embeddings, documentos_planos, indice_em
                 time.sleep(2.5)
                 contexto_rag = buscar_contexto(prompt, modelo_embeddings, documentos_planos, indice_embeddings, user_data)
                 historial_para_api = [{"role": "system", "content": f"{SYSTEM_PROMPT}\n\n{contexto_rag}"}] + active_chat["mensajes"][-10:]
-                response_stream = generar_respuesta_stream(cliente_groq, modelo_seleccionado, historial_para_api)
+                response_stream = generar_respuesta_stream(cliente_groq, historial_para_api)
                 full_response = placeholder.write_stream(response_stream)
         active_chat["mensajes"].append({"role": "assistant", "content": full_response})
         if len(active_chat["mensajes"]) == 2: active_chat["titulo"] = generar_titulo_chat(cliente_groq, prompt)
