@@ -23,6 +23,11 @@ DOMINIO_INSTITUCIONAL = "@13dejulio.edu.ar"
 FIREBASE_DB = f"https://{st.secrets['firebase_config']['projectId']}-default-rtdb.firebaseio.com"
 LOGO_URL = "https://i.imgur.com/gJ5Ym2W.png" # Logo de ejemplo
 
+# --- CÓDIGOS SECRETOS SIMPLIFICADOS PARA PRUEBAS ---
+CODIGO_SECRETO_PROFESOR = "ADMIN2025TEST"
+CODIGO_SECRETO_AUTORIDAD = "ADMIN2025TEST"
+
+
 # ----------------------------------------------------------------------------------
 #  UTILIDADES GENERALES
 # ----------------------------------------------------------------------------------
@@ -189,38 +194,31 @@ def pagina_login():
         ape = st.text_input("Apellido", key="reg_apellido")
         rem = st.text_input("Email institucional", key="reg_email", help=f"Debe terminar en {DOMINIO_INSTITUCIONAL}")
         rpw = st.text_input("Contraseña", type="password", key="reg_password")
-        inv_code = st.text_input("Código de Invitación", key="reg_inv_code", help="Opcional, solo para personal autorizado.")
+        inv_code = st.text_input("Código de Rol", key="reg_inv_code", help="Opcional, solo para personal autorizado.", type="password")
         if st.button("Registrarse", use_container_width=True):
             if not rem.endswith(DOMINIO_INSTITUCIONAL):
                 st.error("Usa tu mail institucional."); st.stop()
-            rol, colec = "alumno", "alumnos"
-            if inv_code:
-                inv = fb_db("get", f"invites/{inv_code}")
-                if not inv or inv.get("used") or is_expired(inv):
-                    st.error("Invitación inválida/expirada."); st.stop()
-                rol, colec = inv["type"], inv["type"]+"s"
+            
+            # Lógica de asignación de rol simplificada con el código de test
+            if inv_code == CODIGO_SECRETO_AUTORIDAD:
+                rol, colec = "autoridad", "autoridades"
+            elif inv_code == CODIGO_SECRETO_PROFESOR:
+                rol, colec = "profesor", "profesores"
+            else:
+                rol, colec = "alumno", "alumnos"
+
             r = fb_auth("accounts:signUp", {"email":rem,"password":rpw,"returnSecureToken":True})
             if "localId" in r:
                 uid, tok = r["localId"], r["idToken"]
                 profile={"nombre":nom,"apellido":ape,"email":rem,"rol":rol,"legajo":str(int(time.time()*100))[-6:]}
                 fb_db("put", f"{colec}/{uid}", profile, tok)
-                if inv_code: fb_db("put", f"invites/{inv_code}/used", True, tok)
-                st.success("¡Registro exitoso! Inicia sesión."); log_action(uid,"register",{"rol":rol})
+                log_action(uid,"register",{"rol":rol})
+                st.success("¡Registro exitoso! Inicia sesión.")
             else: st.error("No se pudo registrar.")
     st.markdown('</div>', unsafe_allow_html=True)
 
 # ----------------------------------------------------------------------------------
-#  NOTIFICACIONES PROACTIVAS
-# ----------------------------------------------------------------------------------
-def unseen_notifications(uid, tok):
-    data = fb_db("get", f"notifications/{uid}", token=tok) or {}
-    return {k:v for k,v in data.items() if not v.get("seen")}
-
-def mark_seen(uid, nid, tok):
-    fb_db("patch", f"notifications/{uid}/{nid}", {"seen":True}, tok)
-
-# ----------------------------------------------------------------------------------
-#  PÁGINA DE PERFIL
+#  PÁGINAS ADICIONALES (PERFIL, ANUNCIOS, ADMIN)
 # ----------------------------------------------------------------------------------
 def pagina_perfil():
     st.header("Mi Perfil")
@@ -231,12 +229,8 @@ def pagina_perfil():
     if st.button("Guardar cambios"):
         col = datos["rol"]+"s"
         fb_db("put", f"{col}/{st.session_state.user_uid}", datos, st.session_state.user_token)
-        log_action(st.session_state.user_uid,"update_profile")
-        st.success("Perfil actualizado.")
+        log_action(st.session_state.user_uid,"update_profile"); st.success("Perfil actualizado.")
 
-# ----------------------------------------------------------------------------------
-#  TABLÓN DE ANUNCIOS
-# ----------------------------------------------------------------------------------
 def pagina_anuncios():
     st.header("📢 Novedades")
     posts = fb_db("get","announcements") or {}
@@ -249,9 +243,6 @@ def pagina_anuncios():
             fb_db("put", f"announcements/{uuid.uuid4()}", {"title":t,"body":b,"createdAt":iso_now(),"author":st.session_state.user_uid}, st.session_state.user_token)
             log_action(st.session_state.user_uid,"post_announcement",{"t":t}); st.success("Publicado."); st.experimental_rerun()
 
-# ----------------------------------------------------------------------------------
-#  DASHBOARD ADMINISTRACIÓN
-# ----------------------------------------------------------------------------------
 def pagina_admin():
     st.header("👑 Panel de Administración"); tabs = st.tabs(["Gestión de Usuarios", "Generar Invitaciones"])
     with tabs[0]:
@@ -295,7 +286,7 @@ def pagina_chat():
             c1,c2=st.columns(2)
             if c1.button("✏️ Renombrar", use_container_width=True): st.session_state.renaming_chat = True
             if c2.button("🗑 Borrar", use_container_width=True): st.session_state.chat_history.pop(ac,None); persist_chat(ac, delete=True); st.experimental_rerun()
-        st.markdown("---");
+        st.markdown("---")
         if st.button("Cerrar Sesión", use_container_width=True):
             for k in list(st.session_state.keys()): del st.session_state[k]
             st.experimental_rerun()
@@ -350,11 +341,21 @@ def app():
             st.session_state.chat_history = st.session_state.user_data.get("chats",{})
             st.session_state.active_chat_id = next(iter(st.session_state.chat_history), None)
             st.session_state.init_loaded=True; st.experimental_rerun()
-    menu = st.sidebar.selectbox("Ir a …", ["Chat","Mi Perfil","Anuncios"] + (["Admin"] if st.session_state.user_data.get("rol")=="autoridad" else []))
-    if menu=="Chat": pagina_chat()
-    elif menu=="Mi Perfil": pagina_perfil()
-    elif menu=="Anuncios": pagina_anuncios()
-    elif menu=="Admin": pagina_admin()
+    
+    # Carga de recursos de IA (siempre se necesita)
+    if 'recursos_ia' not in st.session_state:
+        st.session_state.recursos_ia = recursos_ia()
+
+    menu_options = ["Chat","Mi Perfil","Anuncios"]
+    if st.session_state.user_data.get("rol")=="autoridad":
+        menu_options.append("Admin")
+        
+    menu = st.sidebar.selectbox("Ir a …", menu_options)
+
+    if menu=="Chat":            pagina_chat()
+    elif menu=="Mi Perfil":     pagina_perfil()
+    elif menu=="Anuncios":      pagina_anuncios()
+    elif menu=="Admin":         pagina_admin()
 
 # ----------------------------------------------------------------------------------
 if __name__ == "__main__":
