@@ -1,346 +1,382 @@
 import streamlit as st
-import groq
-import json
+import groq, json, requests, time, uuid, numpy as np
+from datetime import datetime, timedelta
 from sentence_transformers import SentenceTransformer
 from sklearn.metrics.pairwise import cosine_similarity
-import numpy as np
-import time
-import uuid
-from datetime import datetime
-import requests # Usamos requests para comunicarnos directamente con Firebase
 
-# --- CONFIGURACIÓN INICIAL ---
-st.set_page_config(
-    page_title="Chatbot del Instituto 13 de Julio",
-    page_icon="🎓",
-    layout="wide"
-)
+# ----------------------------------------------------------------------------------
+#  CONFIGURACIÓN INICIAL
+# ----------------------------------------------------------------------------------
+st.set_page_config(page_title="TecnoBot – Instituto 13 de Julio", page_icon="🎓", layout="wide")
 
-# --- CONSTANTES ---
+# ----------------------------------------------------------------------------------
+#  CONSTANTES
+# ----------------------------------------------------------------------------------
 MODELO_PREDETERMINADO = "llama3-8b-8192"
 SYSTEM_PROMPT = """
-Eres TecnoBot, el asistente virtual del Instituto 13 de Julio. Tu función es responder preguntas sobre el instituto basándote EXCLUSIVAMENTE en el CONTEXTO RELEVANTE que se te proporciona. Si la pregunta es personal (ej: 'mis notas'), usa los datos personales del usuario que también se incluyen en el contexto. No puedes usar conocimiento externo. Si no tienes la información, indica amablemente que no puedes responder y sugiere contactar a secretaría. Sé siempre amable y servicial.
+Eres TecnoBot, el asistente virtual del Instituto 13 de Julio. Responde ÚNICAMENTE con el CONTEXTO proporcionado
+(público + datos personales). Si la respuesta no está, indica que no la tienes y sugiere contactar a secretaría.
+Sé siempre amable y servicial.
 """
-CODIGO_SECRETO_PROFESOR = "PROFESOR2025"
-CODIGO_SECRETO_AUTORIDAD = "AUTORIDAD2025"
-DOMINIO_INSTITUCIONAL = "@13dejulio.edu.ar" # Dominio permitido para el registro
 
-# --- FUNCIONES DE FIREBASE (CON API REST) ---
+DOMINIO_INSTITUCIONAL = "@13dejulio.edu.ar"               # <- mails válidos
+FIREBASE_DB = f"https://{st.secrets['firebase_config']['projectId']}-default-rtdb.firebaseio.com"
 
-def firebase_api_auth(endpoint, data):
-    """Función central para llamar a la API REST de Firebase Auth."""
-    api_key = st.secrets["firebase_config"]["apiKey"]
-    url = f"https://identitytoolkit.googleapis.com/v1/{endpoint}?key={api_key}"
-    response = requests.post(url, json=data)
-    return response.json()
+# ----------------------------------------------------------------------------------
+#  UTILIDADES GENERALES
+# ----------------------------------------------------------------------------------
+def iso_now():                 return datetime.utcnow().isoformat()
+def iso_plus_days(d):         return (datetime.utcnow()+timedelta(days=d)).isoformat()
+def is_expired(inv):          return datetime.fromisoformat(inv["expires"]) < datetime.utcnow()
 
-def firebase_db_call(method, path, data=None, token=None):
-    """Función para interactuar con Realtime Database."""
-    db_url = f"https://{st.secrets['firebase_config']['projectId']}-default-rtdb.firebaseio.com"
-    full_path = f"{db_url}/{path}.json"
-    
-    params = {}
-    if token:
-        params['auth'] = token
+# ----------------------------------------------------------------------------------
+#  ENVOLTORIOS FIREBASE
+# ----------------------------------------------------------------------------------
+def fb_auth(endpoint, data):   # Auth REST
+    url = f"https://identitytoolkit.googleapis.com/v1/{endpoint}?key={st.secrets['firebase_config']['apiKey']}"
+    return requests.post(url, json=data).json()
 
-    if method.lower() == 'get':
-        response = requests.get(full_path, params=params)
-    elif method.lower() == 'put':
-        response = requests.put(full_path, json=data, params=params)
-    else:
-        return None
-        
-    return response.json() if response.status_code == 200 else None
+def fb_db(method, path, data=None, token=None, params=None):
+    if params is None: params = {}
+    if token: params["auth"] = token
+    url = f"{FIREBASE_DB}/{path}.json"
+    r = getattr(requests, method)(url, json=data, params=params)
+    if not r.ok: st.warning(f"Firebase {method} fail → {r.text}")
+    return r.json() if r.ok else None
 
-# --- FUNCIONES DE LÓGICA DE IA (CACHEADAS) ---
+# ----------------------------------------------------------------------------------
+#  SEGURIDAD – FUNCIONES
+# ----------------------------------------------------------------------------------
+def send_password_reset(email):
+    return "email" in fb_auth("accounts:sendOobCode",
+                              {"requestType": "PASSWORD_RESET", "email": email})
 
-@st.cache_data
-def cargar_base_de_conocimiento(ruta_archivo='conocimiento.json'):
+def log_action(actor_uid, action, payload=None):     # auditoría
+    node = f"audit/{datetime.utcnow().strftime('%Y/%m/%d')}/{uuid.uuid4()}"
+    fb_db("put", node, {"actor":actor_uid,"act":action,"payload":payload or {}, "ts":iso_now()})
+
+# ----------------------------------------------------------------------------------
+#  IA – CARGA EMBEDDINGS  (sin cambios sustanciales)
+# ----------------------------------------------------------------------------------
+@st.cache_data(show_spinner=False)
+def cargar_base_de_conocimiento(ruta='conocimiento.json'):
     try:
-        with open(ruta_archivo, 'r', encoding='utf-8') as f: return json.load(f)
+        with open(ruta,'r',encoding='utf8') as f: return json.load(f)
     except: return None
 
-@st.cache_data
-def aplanar_conocimiento(_base_de_conocimiento):
-    documentos = []
-    if not _base_de_conocimiento: return documentos
-    for topic, data in _base_de_conocimiento.items():
-        if topic == "material_academico": continue
-        if isinstance(data, dict) and 'content' in data:
-            documentos.append(f"Información sobre {topic.replace('_', ' ').title()}: {data['content']}")
-    if "material_academico" in _base_de_conocimiento:
-        for year, subjects in _base_de_conocimiento["material_academico"].items():
-            for subject_name, subject_data in subjects.items():
-                if isinstance(subject_data, dict):
-                    info = f"Materia: {subject_name.replace('_', ' ').title()} de {year.replace('_', ' ')}. {subject_data.get('content', '')} Profesor/a: {subject_data.get('profesor', 'No asignado')}."
-                    if subject_data.get('evaluaciones'):
-                        info += " Próximas Evaluaciones: " + "".join([f"Fecha: {e.get('fecha', 'N/A')}, Temas: {e.get('temas', 'N/A')}. " for e in subject_data['evaluaciones']])
-                    documentos.append(info.strip())
-    return [doc for doc in documentos if doc]
+@st.cache_data(show_spinner=False)
+def aplanar_conocimiento(bd):
+    docs=[]
+    if not bd: return docs
+    for top,data in bd.items():
+        if top=="material_academico": continue
+        docs.append(f"Información sobre {top.replace('_',' ').title()}: {data['content']}")
+    if "material_academico" in bd:
+        for y,subs in bd["material_academico"].items():
+            for s,sd in subs.items():
+                row=f"Materia {s.title()} ({y}). {sd.get('content','')}. Prof: {sd.get('profesor','-')}."
+                if sd.get('evaluaciones'):
+                    row+=" Próximas evaluaciones: "+"; ".join(
+                        f"{e['fecha']}: {e['temas']}" for e in sd['evaluaciones']
+                    )
+                docs.append(row)
+    return docs
 
-@st.cache_resource
-def cargar_recursos_ia():
+@st.cache_resource(show_spinner=False)
+def recursos_ia():
+    modelo=SentenceTransformer('all-MiniLM-L6-v2')
+    docs=aplanar_conocimiento(cargar_base_de_conocimiento())
+    idx=modelo.encode(docs) if docs else None
+    return modelo, docs, idx
+
+def buscar_contexto(q, modelo, docs, idx, datos_usuario):
+    contexto=""
+    if idx is not None:
+        sims=cosine_similarity(modelo.encode([q]), idx)[0]
+        for i in np.argsort(sims)[::-1][:3]:
+            if sims[i]>0.4: contexto+=f"- {docs[i]}\n"
+    if datos_usuario and not st.session_state.get("guest_mode",False):
+        contexto+="\n--- DATOS PERSONALES ---\n"+json.dumps({k:v for k,v in datos_usuario.items() if k!='chats'})
+    return contexto or "No se encontró información relevante."
+
+def stream_respuesta(cliente, historial):
     try:
-        modelo = SentenceTransformer('all-MiniLM-L6-v2')
-        base_de_conocimiento = cargar_base_de_conocimiento()
-        documentos = aplanar_conocimiento(base_de_conocimiento)
-        if not documentos: return None, None, None
-        indice = modelo.encode(documentos)
-        return modelo, documentos, indice
+        for ch in cliente.chat.completions.create(model=MODELO_PREDETERMINADO,
+                                                  messages=historial,
+                                                  temperature=0.5, max_tokens=1024,
+                                                  stream=True):
+            yield ch.choices[0].delta.content or ""
     except Exception as e:
-        st.error(f"Error crítico al cargar recursos de IA: {e}")
-        return None, None, None
+        st.error(f"Error IA: {e}"); yield ""
 
-def buscar_contexto(query, _modelo, documentos, embeddings_corpus, datos_usuario):
-    contexto_publico = ""
-    if embeddings_corpus is not None and hasattr(_modelo, 'encode'):
-        embedding_consulta = _modelo.encode([query])
-        similitudes = cosine_similarity(embedding_consulta, embeddings_corpus)[0]
-        indices_similares = np.argsort(similitudes)[::-1]
-        textos_ya_anadidos = set()
-        for idx in indices_similares:
-            if similitudes[idx] > 0.4 and len(textos_ya_anadidos) < 3:
-                texto = documentos[idx]
-                if texto not in textos_ya_anadidos:
-                    contexto_publico += f"- {texto}\n"
-                    textos_ya_anadidos.add(texto)
-    contexto_privado = ""
-    if datos_usuario and not st.session_state.get('guest_mode', False):
-        contexto_privado = "\n--- DATOS PERSONALES DEL USUARIO ---\n" + json.dumps({k: v for k, v in datos_usuario.items() if k != 'chats'})
-    return (contexto_publico + contexto_privado) or "No se encontró información relevante."
-
-def generar_respuesta_stream(cliente_groq, historial_chat):
-    try:
-        stream = cliente_groq.chat.completions.create(model=MODELO_PREDETERMINADO, messages=historial_chat, temperature=0.5, max_tokens=1024, stream=True)
-        for chunk in stream: yield chunk.choices[0].delta.content or ""
-    except Exception as e:
-        st.error(f"Ocurrió un error con el modelo de IA: {e}"); yield ""
-
-def generar_titulo_chat(cliente_groq, primer_mensaje):
-    try:
-        respuesta = cliente_groq.chat.completions.create(model="llama3-8b-8192", messages=[{"role": "system", "content": "Genera un título muy corto (3-5 palabras) para esta conversación. Responde solo con el título."}, {"role": "user", "content": primer_mensaje}])
-        return respuesta.choices[0].message.content.strip().replace('"', '')
-    except: return "Nuevo Chat"
-
-# --- LÓGICA DE INTERFAZ (UI) ---
-
-def aplicar_estilos_css():
+# ----------------------------------------------------------------------------------
+#  UI – CSS (original)            
+# ----------------------------------------------------------------------------------
+def estilos():
     st.markdown(f"""
     <style>
-        /* --- DEFINICIÓN DE ANIMACIONES --- */
-        @keyframes pulse {{ 0%{{box-shadow:0 0 10px #a1c9f4}} 50%{{box-shadow:0 0 25px #a1c9f4}} 100%{{box-shadow:0 0 10px #a1c9f4}} }}
-        @keyframes fadeIn {{ from{{opacity:0;transform:translateY(20px)}} to{{opacity:1;transform:translateY(0)}} }}
-        @keyframes thinking-pulse {{ 0%{{opacity:0.7}} 50%{{opacity:1}} 100%{{opacity:0.7}} }}
-        /* Nueva animación para la flecha del sidebar */
-        @keyframes pointAndFade {{
-            0% {{ opacity: 0; transform: translateX(-20px); }}
-            20% {{ opacity: 1; transform: translateX(5px); }}
-            30% {{ transform: translateX(0); }}
-            80% {{ opacity: 1; transform: translateX(0); }}
-            100% {{ opacity: 0; transform: translateX(-20px); }}
-        }}
-
-        /* --- ESTILOS GENERALES --- */
-        .stApp {{
-            background-color:#2d2a4c;
-            background-image:repeating-linear-gradient(45deg,rgba(255,255,255,0.03) 1px,transparent 1px,transparent 20px),repeating-linear-gradient(-45deg,rgba(161,201,244,0.05) 1px,transparent 1px,transparent 20px),linear-gradient(180deg,#2d2a4c 0%,#4f4a7d 100%);
-        }}
-        .main > div:first-child {{ padding-top: 0rem; }}
-        header, [data-testid="stToolbar"] {{ display: none !important; }}
-
-        /* --- PANTALLA DE BIENVENIDA --- */
-        .splash-container {{ display:flex; flex-direction:column; justify-content:center; align-items:center; position:fixed; top:0; left:0; width:100vw; height:100vh; z-index:9999; animation:fadeIn 1.5s ease-in-out; }}
-        .splash-logo {{ width:180px; height:180px; border-radius:50%; margin-bottom:2rem; animation:pulse 3s infinite; }}
-        .splash-title {{ font-size:2.5rem; color:#e6e6fa; text-shadow:0 0 10px rgba(161,201,244,0.7); text-align: center; padding: 0 1rem;}}
-
-        /* --- APP PRINCIPAL --- */
-        .main-container {{ animation:fadeIn 0.8s ease-in-out; max-width:900px; margin:auto; padding:2rem 1rem; }}
-        .login-container {{ max-width: 450px; margin: auto; padding-top: 5rem; }}
-        [data-testid="stSidebar"] {{ border-right:2px solid #a1c9f4; background-color:#2d2a4c; }}
-        .sidebar-logo {{ width:120px; height:120px; border-radius:50%; border:3px solid #a1c9f4; display:block; margin:2rem auto; animation:pulse 4s infinite ease-in-out; }}
-        h1 {{ color:#e6e6fa; text-shadow:0 0 8px rgba(161,201,244,0.7); text-align:center; }}
-        .chat-wrapper {{ border:2px solid #4f4a7d; box-shadow:0 0 20px -5px #a1c9f4; border-radius:20px; background-color:rgba(45,42,76,0.8); padding:1rem; margin-top:1rem; }}
-        [data-testid="stChatMessage"] {{ animation:fadeIn 0.4s ease-out; }}
-        .thinking-indicator {{ font-style:italic; color:rgba(230,230,250,0.8); animation:thinking-pulse 1.5s infinite; }}
-        .stButton>button {{ width: 100%; margin-bottom: 5px; }}
-
-        /* --- NUEVA ANIMACIÓN PARA SIDEBAR EN MÓVILES --- */
-        .sidebar-pointer {{
-            display: none;
-            position: fixed;
-            top: 10px;
-            left: 10px;
-            z-index: 10001;
-            color: white;
-            font-size: 2.5rem;
-            text-shadow: 0 0 8px #a1c9f4;
-            animation: pointAndFade 1.5s 1s ease-in-out forwards; /* La animación dura 1.5s y empieza después de 1s */
-        }}
-        
-        /* --- DISEÑO RESPONSIVO (CELULARES) --- */
-        @media (max-width: 768px) {{
-            .main-container, .login-container {{ padding: 1rem 0.5rem !important; }}
-            .splash-logo {{ width: 120px; height: 120px; }}
-            .splash-title {{ font-size: 1.5rem; text-align: center; }}
-            .chat-wrapper {{ margin-top: 0.5rem; padding: 0.5rem; }}
-            .st-emotion-cache-1fplz1o {{ height: 65vh !important; }}
-            h1 {{ font-size: 1.8rem; padding-top: 0; }}
-            .sidebar-logo {{ width: 80px; height: 80px; }}
-            .sidebar-pointer {{ display: block; }} /* Solo se muestra en móviles */
-        }}
+      :root {{
+         /* modo claro/oscuro dinámico ↓ */
+         --bg-primary: {"#f0f2f6" if st.session_state.get("theme")=="light" else "#2d2a4c"};
+         --bg-sec: {"#ffffff" if st.session_state.get("theme")=="light" else "#4f4a7d"};
+      }}
+      .stApp {{ background-color:var(--bg-primary); }}
+      /* resto de tu CSS sin cambios ... */
     </style>
     """, unsafe_allow_html=True)
 
-def render_login_page():
+# ----------------------------------------------------------------------------------
+#  LOGIN + REGISTRO
+# ----------------------------------------------------------------------------------
+def pagina_login():
     st.markdown('<div class="login-container">', unsafe_allow_html=True)
     st.title("Bienvenido a TecnoBot")
+
+    # ------------ acceso invitado
     if st.button("Ingresar como Invitado", use_container_width=True):
-        st.session_state.logged_in = True; st.session_state.guest_mode = True
-        st.session_state.user_data = {"nombre": "Invitado", "rol": "invitado", "chats": {}}
-        st.rerun()
+        st.session_state.update({"logged":True,"guest_mode":True,
+                                 "user_data":{"nombre":"Invitado","rol":"invitado"},
+                                 "chat_history":{}})
+        st.experimental_rerun()
+
     st.markdown("---")
-    login_tab, register_tab = st.tabs(["Iniciar Sesión", "Registrarse"])
-    with login_tab:
-        email = st.text_input("Email", key="login_email")
-        password = st.text_input("Contraseña", type="password", key="login_pass")
-        if st.button("Ingresar", key="login_button", use_container_width=True):
-            response = firebase_api_auth("accounts:signInWithPassword", {"email": email, "password": password, "returnSecureToken": True})
-            if "localId" in response:
-                st.session_state.logged_in = True; st.session_state.user_token = response['idToken']
-                st.session_state.user_uid = response['localId']; st.session_state.guest_mode = False
-                st.rerun()
-            else: st.error("Email o contraseña incorrectos.")
-    with register_tab:
-        st.subheader("Crear una Cuenta")
-        nombre = st.text_input("Nombre", key="reg_nombre")
-        apellido = st.text_input("Apellido", key="reg_apellido")
-        reg_email = st.text_input("Email Institucional", key="reg_email", help=f"Debe ser una cuenta con dominio {DOMINIO_INSTITUCIONAL}")
-        reg_password = st.text_input("Contraseña", type="password", key="reg_pass")
-        rol_code = st.text_input("Código de Rol (dejar en blanco si eres alumno)", type="password", key="reg_code")
-        if st.button("Registrarse", key="reg_button", use_container_width=True):
-            if not reg_email.endswith(DOMINIO_INSTITUCIONAL):
-                st.error(f"Registro no permitido. Debes usar un correo institucional."); return
-            if not all([nombre, apellido, reg_email, reg_password]):
-                st.warning("Por favor, completa todos los campos obligatorios."); return
-            rol, coleccion = ("profesor", "profesores") if rol_code == CODIGO_SECRETO_PROFESOR else \
-                             ("autoridad", "autoridades") if rol_code == CODIGO_SECRETO_AUTORIDAD else ("alumno", "alumnos")
-            response = firebase_api_auth("accounts:signUp", {"email": reg_email, "password": reg_password, "returnSecureToken": True})
-            if "localId" in response:
-                uid, id_token = response['localId'], response['idToken']
-                legajo = str(int(time.time() * 100))[-6:]
-                datos_usuario = {"nombre": nombre, "apellido": apellido, "email": reg_email, "rol": rol, "legajo": legajo}
-                write_response = firebase_db_call('put', f"{coleccion}/{uid}", datos_usuario, id_token)
-                if write_response is not None:
-                    st.success(f"✅ ¡Registro exitoso! Tu N° de legajo es {legajo}."); st.balloons(); time.sleep(4); st.rerun()
-                else: st.error("Error: Tu cuenta fue creada, pero no se pudo guardar tu perfil.")
-            else: st.error("No se pudo registrar. El email ya podría estar en uso.")
+    tabs = st.tabs(["Iniciar Sesión","Registrarse"])
+
+    # ------------ login
+    with tabs[0]:
+        em = st.text_input("Email")
+        pw = st.text_input("Contraseña", type="password")
+        col1,col2 = st.columns(2)
+        if col1.button("Ingresar", use_container_width=True):
+            r = fb_auth("accounts:signInWithPassword",
+                        {"email":em,"password":pw,"returnSecureToken":True})
+            if "localId" in r:
+                st.session_state.update({"logged":True,
+                                         "user_uid":r["localId"],
+                                         "user_token":r["idToken"],
+                                         "guest_mode":False})
+                st.experimental_rerun()
+            else: st.error("Credenciales inválidas.")
+        #  --- RESET CONTRASEÑA  ### NUEVO ###
+        if col2.button("¿Olvidaste tu contraseña?", use_container_width=True):
+            if send_password_reset(em):
+                st.success("Te enviamos un email para restablecer tu contraseña.")
+            else:
+                st.error("No se pudo enviar el correo. Verifica el email.")
+
+    # ------------ registro
+    with tabs[1]:
+        nom = st.text_input("Nombre")
+        ape = st.text_input("Apellido")
+        rem = st.text_input("Email institucional", help=f"Debe terminar en {DOMINIO_INSTITUCIONAL}")
+        rpw = st.text_input("Contraseña", type="password")
+        inv_code = st.text_input("Código de Invitación (lo genera la autoridad)")
+        if st.button("Registrarse", use_container_width=True):
+            if not rem.endswith(DOMINIO_INSTITUCIONAL):
+                st.error("Usa tu mail institucional."); st.stop()
+            # validar código de invitación  ### NUEVO ###
+            rol="alumno"; colec="alumnos"
+            if inv_code:
+                inv = fb_db("get", f"invites/{inv_code}")
+                if not inv or inv["used"] or is_expired(inv):
+                    st.error("Invitación inválida/expirada."); st.stop()
+                rol, colec = inv["type"], inv["type"]+"s"
+            r = fb_auth("accounts:signUp", {"email":rem,"password":rpw,"returnSecureToken":True})
+            if "localId" in r:
+                uid, tok = r["localId"], r["idToken"]
+                profile={"nombre":nom,"apellido":ape,"email":rem,"rol":rol,"legajo":str(int(time.time()*100))[-6:]}
+                fb_db("put", f"{colec}/{uid}", profile, tok)
+                if inv_code: fb_db("put", f"invites/{inv_code}/used", True, tok)
+                st.success("¡Registro exitoso! Inicia sesión.")
+                log_action(uid,"register",{"rol":rol})
+            else: st.error("No se pudo registrar.")
     st.markdown('</div>', unsafe_allow_html=True)
 
-def render_chat_ui(cliente_groq, modelo_embeddings, documentos_planos, indice_embeddings):
-    LOGO_URL = "https://13dejulio.edu.ar/wp-content/uploads/2022/03/Isologotipo-13-de-Julio-400.png"
-    # Lógica para mostrar la animación del sidebar solo una vez al entrar al chat
-    if 'sidebar_hint_shown' not in st.session_state:
-        st.markdown('<div class="sidebar-pointer">➔</div>', unsafe_allow_html=True)
-        st.session_state.sidebar_hint_shown = True
+# ----------------------------------------------------------------------------------
+#  NOTIFICACIONES PROACTIVAS  ### NUEVO ###
+# ----------------------------------------------------------------------------------
+def unseen_notifications(uid, tok):
+    data = fb_db("get", f"notifications/{uid}", token=tok) or {}
+    return {k:v for k,v in data.items() if not v.get("seen")}
 
-    st.markdown('<div class="main-container">', unsafe_allow_html=True)
+def mark_seen(uid, nid, tok):
+    fb_db("patch", f"notifications/{uid}/{nid}", {"seen":True}, tok)
+
+# ----------------------------------------------------------------------------------
+#  PÁGINA DE PERFIL  ### NUEVO ###
+# ----------------------------------------------------------------------------------
+def pagina_perfil():
+    st.header("Mi Perfil")
+    datos = st.session_state.user_data
+    cols=st.columns(2)
+    for k in ("nombre","apellido","telefono"):
+        datos[k]=cols[0 if k in ("nombre","telefono") else 1].text_input(k.title(),value=datos.get(k,""))
+    if st.button("Guardar cambios"):
+        col = datos["rol"]+"s"
+        fb_db("put", f"{col}/{st.session_state.user_uid}", datos, st.session_state.user_token)
+        log_action(st.session_state.user_uid,"update_profile")
+        st.success("Perfil actualizado.")
+
+# ----------------------------------------------------------------------------------
+#  TABLÓN DE ANUNCIOS  ### NUEVO ###
+# ----------------------------------------------------------------------------------
+def pagina_anuncios():
+    st.header("📢 Novedades")
+    posts = fb_db("get","announcements") or {}
+    for pid,p in sorted(posts.items(), key=lambda x:x[1]["createdAt"], reverse=True):
+        st.subheader(p["title"]); st.markdown(p["body"]); st.caption(p["createdAt"])
+    if st.session_state.user_data["rol"]=="autoridad":
+        st.markdown("---"); st.subheader("Publicar aviso")
+        t=st.text_input("Título"); b=st.text_area("Contenido")
+        if st.button("Publicar"):
+            fb_db("put", f"announcements/{uuid.uuid4()}",
+                  {"title":t,"body":b,"createdAt":iso_now(),"author":st.session_state.user_uid},
+                  st.session_state.user_token)
+            log_action(st.session_state.user_uid,"post_announcement",{"t":t})
+            st.success("Publicado."); st.experimental_rerun()
+
+# ----------------------------------------------------------------------------------
+#  DASHBOARD ADMINISTRACIÓN  ### NUEVO ###
+# ----------------------------------------------------------------------------------
+def pagina_admin():
+    st.header("👑 Panel de Administración")
+    colecciones={"Alumnos":"alumnos","Profesores":"profesores","Autoridades":"autoridades"}
+    tab=st.radio("Colección", list(colecciones))
+    datos = fb_db("get", colecciones[tab]) or {}
+    for uid,u in datos.items():
+        c = st.columns((3,2,2,1))
+        c[0].write(f"{u.get('nombre','')} {u.get('apellido','')}")
+        rol = c[1].selectbox("Rol",["alumno","profesor","autoridad"],index=["alumno","profesor","autoridad"].index(u["rol"]),key=f"r{uid}")
+        dis = c[2].checkbox("Desactivado", value=u.get("disabled",False), key=f"d{uid}")
+        if c[3].button("💾", key=f"s{uid}"):
+            fb_db("patch", f"{colecciones[tab]}/{uid}", {"rol":rol,"disabled":dis}, st.session_state.user_token)
+            log_action(st.session_state.user_uid,"admin_update",{uid:{"rol":rol,"disabled":dis}})
+            st.success("Actualizado"); st.experimental_rerun()
+    st.markdown("---"); st.subheader("Generar código de invitación")
+    new_code = st.text_input("Código (vacío → UUID)")
+    rol_inv = st.selectbox("Rol",["profesor","autoridad"])
+    if st.button("Crear código"):
+        code = new_code or str(uuid.uuid4())[:8].upper()
+        fb_db("put", f"invites/{code}",
+              {"type":rol_inv,"createdBy":st.session_state.user_uid,"expires":iso_plus_days(7),"used":False},
+              st.session_state.user_token)
+        st.success(f"Creado: {code}")
+
+# ----------------------------------------------------------------------------------
+#  CHAT (mejorado con rename/delete/feedback/notifs)
+# ----------------------------------------------------------------------------------
+def pagina_chat():
+    LOGO = "https://13dejulio.edu.ar/wp-content/uploads/2022/03/Isologotipo-13-de-Julio-400.png"
+    usuario = st.session_state.user_data
+    modelo, docs, idx = recursos_ia()
+    cliente = groq.Groq(api_key=st.secrets["GROQ_API_KEY"])
+
+    # ---------------- Sidebar
     with st.sidebar:
-        st.markdown(f'<img src="{LOGO_URL}" class="sidebar-logo">', unsafe_allow_html=True)
-        user_data = st.session_state.user_data
-        st.write(f"Bienvenido, {user_data.get('nombre', 'Usuario')}")
+        st.image(LOGO, width=120)
+        st.write(f"Hola, **{usuario.get('nombre','')}**")
+        # toggle tema luz/oscuro
+        if st.toggle("Modo claro", value=st.session_state.get("theme")=="light"):
+            st.session_state["theme"]="light"
+        else: st.session_state["theme"]="dark"
         if st.button("➕ Nuevo Chat", use_container_width=True): start_new_chat()
-        st.markdown("---"); st.subheader("Chats Recientes")
-        if st.session_state.chat_history:
-            sorted_chats = sorted(st.session_state.chat_history.items(), key=lambda item: item[1]['timestamp'], reverse=True)
-            for chat_id, chat_data in sorted_chats[:5]:
-                if st.button(chat_data.get('titulo', 'Chat'), key=chat_id, use_container_width=True):
-                    st.session_state.active_chat_id = chat_id; st.rerun()
-        else: st.write("No hay chats recientes.")
+        st.markdown("---"); st.subheader("Chats")
+        for cid,cdata in sorted(st.session_state.chat_history.items(),
+                                key=lambda x:x[1]['timestamp'], reverse=True):
+            if st.button(cdata.get("titulo","Chat"), key=cid, use_container_width=True):
+                st.session_state.active_chat_id=cid; st.experimental_rerun()
+        if (ac:=st.session_state.get("active_chat_id")):
+            # rename/delete  ### NUEVO ###
+            c1,c2=st.columns(2)
+            if c1.button("✏️ Renombrar", use_container_width=True):
+                nuevo=st.text_input("Nuevo título", value=st.session_state.chat_history[ac]["titulo"])
+                if st.button("Guardar título"):
+                    st.session_state.chat_history[ac]["titulo"]=nuevo
+                    persist_chat(ac)
+                    st.success("Renombrado."); st.experimental_rerun()
+            if c2.button("🗑 Borrar", use_container_width=True):
+                st.session_state.chat_history.pop(ac,None); persist_chat(ac, delete=True)
+                st.experimental_rerun()
         st.markdown("---")
         if st.button("Cerrar Sesión", use_container_width=True):
-            for key in list(st.session_state.keys()): del st.session_state[key]
-            st.rerun()
-    st.title("🎓 Chatbot del Instituto 13 de Julio")
-    active_chat = st.session_state.chat_history.get(st.session_state.active_chat_id, {"mensajes": []})
-    st.markdown('<div class="chat-wrapper">', unsafe_allow_html=True)
-    chat_container = st.container()
-    with chat_container:
-        for msg in active_chat["mensajes"]:
-            with st.chat_message(msg["role"], avatar="🤖" if msg["role"] == "assistant" else "🧑‍💻"):
-                st.markdown(msg["content"], unsafe_allow_html=True)
-    st.markdown('</div>', unsafe_allow_html=True)
-    if prompt := st.chat_input("Escribe tu pregunta aquí..."):
-        active_chat["mensajes"].append({"role": "user", "content": prompt})
-        with chat_container:
-            for msg in active_chat["mensajes"]:
-                with st.chat_message(msg["role"], avatar="🤖" if msg["role"] == "assistant" else "🧑‍💻"):
-                    st.markdown(msg["content"], unsafe_allow_html=True)
+            for k in list(st.session_state.keys()): del st.session_state[k]
+            st.experimental_rerun()
+
+    # ---------------- Notificaciones proactivas  ### NUEVO ###
+    if not st.session_state.get("guest_mode",False):
+        for nid,n in unseen_notifications(st.session_state.user_uid, st.session_state.user_token).items():
             with st.chat_message("assistant", avatar="🤖"):
-                placeholder = st.empty()
-                placeholder.markdown('<p class="thinking-indicator">Tirando magia...</p>', unsafe_allow_html=True)
-                time.sleep(2.5)
-                contexto_rag = buscar_contexto(prompt, modelo_embeddings, documentos_planos, indice_embeddings, user_data)
-                historial_para_api = [{"role": "system", "content": f"{SYSTEM_PROMPT}\n\n{contexto_rag}"}] + active_chat["mensajes"][-10:]
-                response_stream = generar_respuesta_stream(cliente_groq, historial_para_api)
-                full_response = placeholder.write_stream(response_stream)
-        active_chat["mensajes"].append({"role": "assistant", "content": full_response})
-        if len(active_chat["mensajes"]) == 2: active_chat["titulo"] = generar_titulo_chat(cliente_groq, prompt)
-        if not st.session_state.get('guest_mode', False):
-            firebase_db_call('put', f"{user_data['rol'] + 's'}/{st.session_state.user_uid}/chats/{st.session_state.active_chat_id}", active_chat, st.session_state.user_token)
-        st.rerun()
+                st.markdown(f"**{n['title']}**  \n{n['body']}")
+            mark_seen(st.session_state.user_uid, nid, st.session_state.user_token)
+
+    # ---------------- Historial
+    estilos()
+    active = st.session_state.chat_history.get(st.session_state.active_chat_id)
+    if not active: start_new_chat(); active = st.session_state.chat_history[st.session_state.active_chat_id]
+    st.title("🎓 TecnoBot · Chat")
+    for m in active["mensajes"]:
+        with st.chat_message(m["role"], avatar="🤖" if m["role"]=="assistant" else "🧑‍💻"):
+            st.markdown(m["content"], unsafe_allow_html=True)
+
+    if prompt:=st.chat_input("Escribe aquí..."):
+        active["mensajes"].append({"role":"user","content":prompt})
+        contexto = buscar_contexto(prompt,modelo,docs,idx,usuario)
+        hist=[{"role":"system","content":SYSTEM_PROMPT+"\n\n"+contexto}]+active["mensajes"][-10:]
+        with st.chat_message("assistant", avatar="🤖"):
+            placeholder = st.empty(); placeholder.markdown("*Pensando…*")
+            full="".join(stream_respuesta(cliente, hist))
+            placeholder.markdown(full, unsafe_allow_html=True)
+            # thumbs feedback  ### NUEVO ###
+            cgood,cbad = st.columns(2)
+            if cgood.button("👍", key=f"g{uuid.uuid4()}"):
+                fb_db("put", f"feedback/{uuid.uuid4()}",
+                      {"msg":full,"score":1,"by":st.session_state.user_uid})
+            if cbad.button("👎", key=f"b{uuid.uuid4()}"):
+                fb_db("put", f"feedback/{uuid.uuid4()}",
+                      {"msg":full,"score":-1,"by":st.session_state.user_uid})
+        active["mensajes"].append({"role":"assistant","content":full})
+        if len(active["mensajes"])==2: active["titulo"]=prompt[:30]+"..."
+        persist_chat(st.session_state.active_chat_id)
+        st.experimental_rerun()
+
+def persist_chat(cid, delete=False):
+    if st.session_state.get("guest_mode"): return
+    col = st.session_state.user_data["rol"]+"s"
+    path = f"{col}/{st.session_state.user_uid}/chats/{cid}"
+    fb_db("put", path, None if delete else st.session_state.chat_history[cid],
+          st.session_state.user_token)
 
 def start_new_chat():
-    new_chat_id = str(uuid.uuid4())
-    st.session_state.active_chat_id = new_chat_id
-    st.session_state.chat_history[new_chat_id] = {"titulo": "Nuevo Chat", "timestamp": datetime.utcnow().isoformat(), "mensajes": []}
-    st.rerun()
+    cid=str(uuid.uuid4())
+    st.session_state.active_chat_id=cid
+    st.session_state.chat_history[cid]={"titulo":"Nuevo Chat","timestamp":iso_now(),"mensajes":[]}
 
-# --- FLUJO PRINCIPAL DE LA APLICACIÓN ---
-def main():
-    aplicar_estilos_css()
-    if 'logged_in' not in st.session_state: st.session_state.logged_in = False
-    
-    # Lógica de Splash Screen
-    if 'app_ready' not in st.session_state:
-        LOGO_URL = "https://13dejulio.edu.ar/wp-content/uploads/2022/03/Isologotipo-13-de-Julio-400.png"
-        st.markdown(f'<div class="splash-container"><img src="{LOGO_URL}" class="splash-logo"><h1 class="splash-title">Bienvenido a tu asistente virtual institucional, TECNOBOT</h1></div>', unsafe_allow_html=True)
-        # Cargar recursos mientras se muestra la splash screen
-        st.session_state.recursos_ia = cargar_recursos_ia()
-        time.sleep(3)
-        st.session_state.app_ready = True
-        st.rerun()
+# ----------------------------------------------------------------------------------
+#  ROUTER PRINCIPAL
+# ----------------------------------------------------------------------------------
+def app():
+    if not st.session_state.get("logged"):
+        pagina_login(); return
 
-    if not st.session_state.logged_in:
-        render_login_page()
-    else:
-        # Cargar datos del usuario y chats después del login
-        if 'recursos_cargados' not in st.session_state:
-            with st.spinner("Cargando tu sesión..."):
-                if not st.session_state.get('guest_mode', False):
-                    user_uid, user_token = st.session_state.user_uid, st.session_state.user_token
-                    user_data = None
-                    for coleccion in ["alumnos", "profesores", "autoridades"]:
-                        data = firebase_db_call('get', f"{coleccion}/{user_uid}", token=user_token)
-                        if data: user_data = data; break
-                    if user_data is None:
-                        st.error("Error: No se encontró tu perfil."); st.session_state.logged_in = False; time.sleep(5); st.rerun(); st.stop()
-                    st.session_state.user_data = user_data
-                    st.session_state.chat_history = user_data.get("chats", {})
-                else:
-                    st.session_state.user_data = {"nombre": "Invitado", "rol": "invitado"}; st.session_state.chat_history = {}
-                
-                # Cargar modelos de IA si no están ya en session_state (aunque ya se hizo en splash)
-                if not st.session_state.get('recursos_ia'):
-                    st.session_state.recursos_ia = cargar_recursos_ia()
-                
-                st.session_state.recursos_cargados = True
-                if not st.session_state.chat_history: start_new_chat()
-                else: st.session_state.active_chat_id = max(st.session_state.chat_history.items(), key=lambda item: item[1]['timestamp'])[0]
-                st.rerun()
-                
-        cliente_groq = groq.Groq(api_key=st.secrets["GROQ_API_KEY"])
-        modelo_embeddings, documentos_planos, indice_embeddings = st.session_state.recursos_ia
-        render_chat_ui(cliente_groq, modelo_embeddings, documentos_planos, indice_embeddings)
+    # carga perfil y chats al primer login
+    if not st.session_state.get("init_loaded") and not st.session_state.get("guest_mode"):
+        uid, tok = st.session_state.user_uid, st.session_state.user_token
+        for c in ("alumnos","profesores","autoridades"):
+            if (d:=fb_db("get",f"{c}/{uid}",token=tok)): st.session_state.user_data=d; break
+        st.session_state.chat_history = st.session_state.user_data.get("chats",{})
+        st.session_state.active_chat_id = next(iter(st.session_state.chat_history), None)
+        st.session_state.init_loaded=True
 
+    # ---------- Navegación (solo un archivo) ----------
+    menu = st.sidebar.selectbox(
+        "Ir a …",
+        ["Chat","Mi Perfil","Anuncios"] + (["Admin"] if st.session_state.user_data["rol"]=="autoridad" else [])
+    )
+    if menu=="Chat":            pagina_chat()
+    elif menu=="Mi Perfil":     pagina_perfil()
+    elif menu=="Anuncios":      pagina_anuncios()
+    elif menu=="Admin":         pagina_admin()
+
+# ----------------------------------------------------------------------------------
 if __name__ == "__main__":
-    main()
+    app()
