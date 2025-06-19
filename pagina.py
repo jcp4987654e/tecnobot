@@ -352,10 +352,11 @@ def app():
                 for c in ("alumnos","profesores","autoridades"):
                     if (d:=fb_db("get",f"{c}/{uid}",token=tok)): st.session_state.user_data=d; break
                 if not st.session_state.get('user_data'):
-                    st.error("No se pudo cargar tu perfil. Contacta al administrador."); st.stop()
+                    st.error("No se pudo cargar tu perfil."); st.stop()
             st.session_state.chat_history = st.session_state.user_data.get("chats",{})
             st.session_state.active_chat_id = next(iter(st.session_state.chat_history), None)
             st.session_state.init_loaded=True
+    
     if 'recursos_ia' not in st.session_state:
         st.session_state.recursos_ia = recursos_ia()
     
