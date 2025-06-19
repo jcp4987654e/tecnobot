@@ -8,6 +8,141 @@ from sklearn.metrics.pairwise import cosine_similarity
 #  CONFIGURACIÓN INICIAL
 # ----------------------------------------------------------------------------------
 st.set_page_config(page_title="TecnoBot – Instituto 13 de Julio", page_icon="🎓", layout="wide")
+# ──────────────────────────────────────────────────────────────────────────────
+#  2.A  –  Cargar tipografías (una sola vez)  ### NUEVO ###
+# ──────────────────────────────────────────────────────────────────────────────
+def cargar_fuentes():
+    st.markdown("""
+    <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@500;700&family=Inter:wght@400;500&display=swap" rel="stylesheet">
+    """, unsafe_allow_html=True)
+
+# Llama a esta función justo después de la línea st.set_page_config(…):
+# st.set_page_config(...)
+# cargar_fuentes()                              ← AÑADIR
+
+# ──────────────────────────────────────────────────────────────────────────────
+#  2.B  –  Hoja de estilos completa (modo claro / oscuro, glass, neon, hovers)
+#         Sustituye la función aplicar_estilos_css() original por ésta
+# ──────────────────────────────────────────────────────────────────────────────
+def aplicar_estilos_css():
+    tema = st.session_state.get("theme", "dark")          # 'dark' por defecto
+    claro = tema == "light"
+    st.markdown(f"""
+    <style>
+    /* -------------------------------------------------
+       Variables globales
+    ------------------------------------------------- */
+    :root {{
+        --clr-bg-prim   : {"#f4f7ff" if claro else "#2d2a4c"};
+        --clr-bg-sec    : {"#ffffff" if claro else "rgba(45,42,76,0.6)"};
+        --clr-acento    : #a1c9f4;
+        --clr-text-main : {"#2d2a4c" if claro else "#e6e6fa"};
+        --clr-text-sub  : {"#3e3e68" if claro else "#b8b8d4"};
+        --borde-neon    : 0 0 12px var(--clr-acento);
+        --radio-base    : 18px;
+        --vel-trans     : .25s;
+    }}
+
+    /* -------------------------------------------------
+       Tipografía general
+    ------------------------------------------------- */
+    html, body, [class*="st-"] {{
+        font-family: "Inter", sans-serif;
+        color: var(--clr-text-main);
+    }}
+    h1,h2,h3,h4,h5,h6  {{ font-family:"Orbitron", sans-serif; color:var(--clr-text-main); }}
+
+    /* -------------------------------------------------
+       Fondo con sutil textura de circuitos
+    ------------------------------------------------- */
+    .stApp {{
+        background:
+            repeating-linear-gradient(145deg,transparent 0 2px,rgba(255,255,255,.03) 2px 4px),
+            url("data:image/svg+xml;utf8,\
+            <svg xmlns='http://www.w3.org/2000/svg' width='120' height='120' viewBox='0 0 120 120' opacity='0.04'>\
+               <g stroke='%23a1c9f4' stroke-width='1'>\
+                 <path d='M0 60h20m80 0h20M60 0v20m0 80v20'/>\
+                 <circle cx='60' cy='60' r='8' fill='none'/>\
+               </g></svg>") center/240px var(--clr-bg-prim);
+        background-color: var(--clr-bg-prim);
+    }}
+
+    /* -------------------------------------------------
+       Contenedores principales
+    ------------------------------------------------- */
+    .main > div:first-child {{ padding-top: 0rem; }}
+    header, [data-testid="stToolbar"] {{ display:none !important; }}
+    .chat-wrapper {{
+        background: var(--clr-bg-sec);
+        backdrop-filter: blur(10px);          /* Glassmorphism */
+        border:1px solid rgba(161,201,244,.25);
+        border-radius:var(--radio-base);
+        box-shadow:0 8px 25px -6px rgba(0,0,0,.35);
+        padding:1.2rem;
+        transition:box-shadow var(--vel-trans);
+    }}
+    .chat-wrapper:hover {{ box-shadow:0 0 15px -2px var(--clr-acento); }}
+
+    /* -------------------------------------------------
+       Sidebar
+    ------------------------------------------------- */
+    [data-testid="stSidebar"] {{
+        border-right:2px solid var(--clr-acento);
+        background:rgba(45,42,76,0.85);
+        backdrop-filter: blur(6px);
+    }}
+    .sidebar-logo {{
+        width:110px; height:110px; border-radius:50%;
+        border:2px solid var(--clr-acento);
+        box-shadow:var(--borde-neon);
+        display:block; margin:2rem auto;
+        transition:transform .6s;
+    }}
+    .sidebar-logo:hover {{ transform:rotate(360deg) scale(1.05); }}
+
+    /* Botones en el sidebar */
+    .stButton>button {{
+        background:linear-gradient(135deg,var(--clr-acento) 0%,#7db0ff 100%);
+        color:#0a0a23; border:none; border-radius:10px;
+        box-shadow:var(--borde-neon);
+        transition:transform var(--vel-trans), box-shadow var(--vel-trans);
+    }}
+    .stButton>button:hover {{
+        transform:translateY(-3px) scale(1.03);
+        box-shadow:0 0 18px var(--clr-acento);
+    }}
+
+    /* -------------------------------------------------
+       Mensajes del chat y micro‑interacciones
+    ------------------------------------------------- */
+    [data-testid="stChatMessage"] {{
+        animation:fadeIn .35s ease-out both;
+    }}
+    .stChatMessage .stMarkdown:hover {{
+        background:rgba(161,201,244,.08);
+        border-radius:var(--radio-base);
+        padding:.2rem .5rem;
+        transition:background .2s;
+    }}
+    @keyframes fadeIn {{ from{{opacity:0;transform:translateY(15px)}} to{{opacity:1;transform:translateY(0)}} }}
+    @keyframes pulse {{ 0%{{box-shadow:0 0 6px var(--clr-acento)}} 50%{{box-shadow:0 0 18px var(--clr-acento)}} 100%{{box-shadow:0 0 6px var(--clr-acento)}} }}
+
+    /* “Thinking…” indicador */
+    .thinking-indicator {{
+        font-style:italic; color:var(--clr-text-sub);
+        animation:pulse 1.4s infinite;
+    }}
+
+    /* -------------------------------------------------
+       Responsive
+    ------------------------------------------------- */
+    @media (max-width:768px) {{
+        .chat-wrapper {{ padding:.6rem; border-radius:14px; }}
+        .sidebar-logo {{ width:80px;height:80px; }}
+        h1 {{ font-size:1.7rem; }}
+    }}
+    </style>
+    """, unsafe_allow_html=True)
 
 # ----------------------------------------------------------------------------------
 #  CONSTANTES
