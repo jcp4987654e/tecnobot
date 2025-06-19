@@ -20,7 +20,12 @@ Sé siempre amable y servicial.
 """
 DOMINIO_INSTITUCIONAL = "@13dejulio.edu.ar"
 FIREBASE_DB = f"https://{st.secrets['firebase_config']['projectId']}-default-rtdb.firebaseio.com"
-LOGO_URL = "https://i.imgur.com/gJ5Ym2W.png"
+LOGO_URL = "https://i.imgur.com/gJ5Ym2W.png" # Logo de ejemplo
+
+# --- CÓDIGOS SECRETOS SIMPLIFICADOS PARA PRUEBAS ---
+CODIGO_SECRETO_PROFESOR = "ADMIN2025TEST"
+CODIGO_SECRETO_AUTORIDAD = "ADMIN2025TEST"
+
 
 # ----------------------------------------------------------------------------------
 #  UTILIDADES GENERALES
@@ -32,7 +37,7 @@ def is_expired(inv):          return datetime.fromisoformat(inv["expires"]) < da
 # ----------------------------------------------------------------------------------
 #  ENVOLTORIOS FIREBASE
 # ----------------------------------------------------------------------------------
-def fb_auth(endpoint, data):
+def fb_auth(endpoint, data):   # Auth REST
     url = f"https://identitytoolkit.googleapis.com/v1/{endpoint}?key={st.secrets['firebase_config']['apiKey']}"
     return requests.post(url, json=data).json()
 
@@ -48,9 +53,10 @@ def fb_db(method, path, data=None, token=None):
 #  SEGURIDAD – FUNCIONES
 # ----------------------------------------------------------------------------------
 def send_password_reset(email):
-    return "email" in fb_auth("accounts:sendOobCode", {"requestType": "PASSWORD_RESET", "email": email})
+    return "email" in fb_auth("accounts:sendOobCode",
+                              {"requestType": "PASSWORD_RESET", "email": email})
 
-def log_action(actor_uid, action, payload=None):
+def log_action(actor_uid, action, payload=None):     # auditoría
     node = f"audit/{datetime.utcnow().strftime('%Y/%m/%d')}/{uuid.uuid4()}"
     fb_db("put", node, {"actor":actor_uid,"act":action,"payload":payload or {}, "ts":iso_now()})
 
@@ -98,7 +104,10 @@ def buscar_contexto(q, modelo, docs, idx, datos_usuario):
 
 def stream_respuesta(cliente, historial):
     try:
-        for ch in cliente.chat.completions.create(model=MODELO_PREDETERMINADO, messages=historial, temperature=0.5, max_tokens=1024, stream=True):
+        for ch in cliente.chat.completions.create(model=MODELO_PREDETERMINADO,
+                                                  messages=historial,
+                                                  temperature=0.5, max_tokens=1024,
+                                                  stream=True):
             yield ch.choices[0].delta.content or ""
     except Exception as e:
         st.error(f"Error IA: {e}"); yield ""
@@ -124,7 +133,9 @@ def estilos():
 
       .stApp {{
           background-color: var(--bg-primary);
-          background-image: repeating-linear-gradient(45deg, rgba(161, 201, 244, 0.05), rgba(161, 201, 244, 0.05) 1px, transparent 1px, transparent 20px), linear-gradient(180deg, var(--bg-primary) 0%, var(--bg-secondary) 100%);
+          background-image: 
+              repeating-linear-gradient(45deg, rgba(161, 201, 244, 0.05), rgba(161, 201, 244, 0.05) 1px, transparent 1px, transparent 20px),
+              linear-gradient(180deg, var(--bg-primary) 0%, var(--bg-secondary) 100%);
       }}
       .main > div:first-child {{ padding-top: 0; }}
       header, [data-testid="stToolbar"] {{ display: none !important; }}
@@ -161,15 +172,14 @@ def pagina_login():
 
     if st.button("Ingresar como Invitado", use_container_width=True):
         st.session_state.update({"logged_in":True,"guest_mode":True, "user_data":{"nombre":"Invitado","rol":"invitado"}, "chat_history":{}})
-        st.experimental_rerun()
+        st.rerun()
     
-    # --- NUEVO BOTÓN ADMIN TEST ---
     if st.button("🔧 Ingresar como Admin (Test)", use_container_width=True):
         st.session_state.update({"logged_in":True,"guest_mode":False,
                                  "user_data":{"nombre":"Admin","rol":"autoridad", "email":"admin@test.com"},
                                  "user_uid": "admin_test_uid", "user_token":"admin_test_token",
                                  "chat_history":{}})
-        st.experimental_rerun()
+        st.rerun()
 
     st.markdown("---")
     tabs = st.tabs(["Iniciar Sesión","Registrarse"])
@@ -182,7 +192,7 @@ def pagina_login():
             r = fb_auth("accounts:signInWithPassword", {"email":em,"password":pw,"returnSecureToken":True})
             if "localId" in r:
                 st.session_state.update({"logged_in":True, "user_uid":r["localId"], "user_token":r["idToken"], "guest_mode":False})
-                st.experimental_rerun()
+                st.rerun()
             else: st.error("Credenciales inválidas.")
         if col2.button("¿Olvidaste tu contraseña?", use_container_width=True):
             if send_password_reset(em): st.success("Te enviamos un email para restablecer tu contraseña.")
@@ -197,7 +207,7 @@ def pagina_login():
         if st.button("Registrarse", use_container_width=True):
             if not rem.endswith(DOMINIO_INSTITUCIONAL):
                 st.error("Usa tu mail institucional."); st.stop()
-            rol="alumno"; colec="alumnos"
+            rol, colec = "alumno", "alumnos"
             if inv_code:
                 inv = fb_db("get", f"invites/{inv_code}")
                 if not inv or inv.get("used") or is_expired(inv):
@@ -231,7 +241,7 @@ def pagina_perfil():
 
 def pagina_anuncios():
     st.header("📢 Novedades")
-    posts = fb_db("get","announcements", token=st.session_state.user_token) or {}
+    posts = fb_db("get","announcements", token=st.session_state.get("user_token")) or {}
     for pid,p in sorted(posts.items(), key=lambda x:x[1]["createdAt"], reverse=True):
         st.subheader(p["title"]); st.markdown(p["body"]); st.caption(f"Publicado el {p['createdAt']}")
     if st.session_state.user_data.get("rol")=="autoridad":
@@ -239,7 +249,7 @@ def pagina_anuncios():
         t=st.text_input("Título", key="ann_title"); b=st.text_area("Contenido", key="ann_body")
         if st.button("Publicar"):
             fb_db("put", f"announcements/{uuid.uuid4()}", {"title":t,"body":b,"createdAt":iso_now(),"author":st.session_state.user_uid}, st.session_state.user_token)
-            log_action(st.session_state.user_uid,"post_announcement",{"t":t}); st.success("Publicado."); st.experimental_rerun()
+            log_action(st.session_state.user_uid,"post_announcement",{"t":t}); st.success("Publicado."); st.rerun()
 
 def pagina_admin():
     st.header("👑 Panel de Administración"); tabs = st.tabs(["Gestión de Usuarios", "Generar Invitaciones"])
@@ -254,7 +264,7 @@ def pagina_admin():
                 dis = c[1].checkbox("Desactivado", value=u.get("disabled",False), key=f"d{uid}")
                 if c[2].button("💾 Guardar", key=f"s{uid}"):
                     fb_db("patch", f"{colecciones[tab]}/{uid}", {"rol":rol,"disabled":dis}, st.session_state.user_token)
-                    log_action(st.session_state.user_uid,"admin_update",{uid:{"rol":rol,"disabled":dis}}); st.success("Actualizado"); st.experimental_rerun()
+                    log_action(st.session_state.user_uid,"admin_update",{uid:{"rol":rol,"disabled":dis}}); st.success("Actualizado"); st.rerun()
     with tabs[1]:
         st.subheader("Generar código de invitación")
         new_code = st.text_input("Código (vacío para generar uno aleatorio)")
@@ -274,13 +284,13 @@ def pagina_chat():
     with st.sidebar:
         st.image(LOGO_URL, width=120)
         st.write(f"Hola, **{usuario.get('nombre','')}**")
-        if st.toggle("Modo claro", value=st.session_state.get("theme")=="light", key="theme_toggle"): st.session_state["theme"]="light"; st.experimental_rerun()
+        if st.toggle("Modo claro", value=st.session_state.get("theme")=="light", key="theme_toggle"): st.session_state["theme"]="light"; st.rerun()
         else: st.session_state["theme"]="dark"
         if st.button("➕ Nuevo Chat", use_container_width=True): start_new_chat()
         st.markdown("---"); st.subheader("Chats")
         for cid,cdata in sorted(st.session_state.chat_history.items(), key=lambda x:x[1]['timestamp'], reverse=True):
             if st.button(cdata.get("titulo","Chat"), key=cid, use_container_width=True):
-                st.session_state.active_chat_id=cid; st.experimental_rerun()
+                st.session_state.active_chat_id=cid; st.rerun()
         if (ac:=st.session_state.get("active_chat_id")):
             st.markdown("---")
             if st.button("✏️ Renombrar Chat", use_container_width=True): st.session_state.renaming_chat = True
@@ -289,12 +299,12 @@ def pagina_chat():
         st.markdown("---")
         if st.button("Cerrar Sesión", use_container_width=True):
             for k in list(st.session_state.keys()): del st.session_state[k]
-            st.experimental_rerun()
+            st.rerun()
     if st.session_state.get("renaming_chat"):
         ac = st.session_state.active_chat_id
         nuevo = st.text_input("Nuevo título para el chat:", value=st.session_state.chat_history[ac]["titulo"])
         if st.button("Guardar"):
-            st.session_state.chat_history[ac]["titulo"] = nuevo; persist_chat(ac); st.session_state.renaming_chat = False; st.experimental_rerun()
+            st.session_state.chat_history[ac]["titulo"] = nuevo; persist_chat(ac); st.session_state.renaming_chat = False; st.rerun()
     st.title("🎓 TecnoBot · Chat")
     active = st.session_state.chat_history.get(st.session_state.active_chat_id)
     if not active: start_new_chat(); active = st.session_state.chat_history[st.session_state.active_chat_id]
@@ -315,7 +325,7 @@ def pagina_chat():
                 if cbad.button("👎", key=uuid.uuid4()): fb_db("put", f"feedback/{uuid.uuid4()}", {"msg":full,"score":-1,"by":st.session_state.user_uid})
         active["mensajes"].append({"role":"assistant","content":full})
         if len(active["mensajes"])==2: active["titulo"]=prompt[:30]+"..."
-        persist_chat(st.session_state.active_chat_id); st.experimental_rerun()
+        persist_chat(st.session_state.active_chat_id); st.rerun()
 
 def persist_chat(cid, delete=False):
     if st.session_state.get("guest_mode"): return
@@ -326,7 +336,7 @@ def persist_chat(cid, delete=False):
 def start_new_chat():
     cid=str(uuid.uuid4()); st.session_state.active_chat_id=cid
     st.session_state.chat_history[cid]={"titulo":"Nuevo Chat","timestamp":iso_now(),"mensajes":[]}
-    st.experimental_rerun()
+    if "renaming_chat" in st.session_state: del st.session_state.renaming_chat
 
 # ----------------------------------------------------------------------------------
 #  ROUTER PRINCIPAL
@@ -341,13 +351,23 @@ def app():
                 uid, tok = st.session_state.user_uid, st.session_state.user_token
                 for c in ("alumnos","profesores","autoridades"):
                     if (d:=fb_db("get",f"{c}/{uid}",token=tok)): st.session_state.user_data=d; break
+                if not st.session_state.get('user_data'):
+                    st.error("No se pudo cargar tu perfil. Contacta al administrador."); st.stop()
             st.session_state.chat_history = st.session_state.user_data.get("chats",{})
             st.session_state.active_chat_id = next(iter(st.session_state.chat_history), None)
             st.session_state.init_loaded=True
     if 'recursos_ia' not in st.session_state:
         st.session_state.recursos_ia = recursos_ia()
-    menu_options = ["Chat","Mi Perfil","Anuncios"] + (["Admin"] if st.session_state.user_data.get("rol")=="autoridad" else [])
+    
+    # Menú de Navegación
+    menu_options = ["Chat"]
+    if not st.session_state.get("guest_mode"):
+        menu_options.extend(["Mi Perfil", "Anuncios"])
+        if st.session_state.user_data.get("rol")=="autoridad":
+            menu_options.append("Admin")
+    
     menu = st.sidebar.selectbox("Ir a …", menu_options, key="navigation")
+
     if menu=="Chat": pagina_chat()
     elif menu=="Mi Perfil": pagina_perfil()
     elif menu=="Anuncios": pagina_anuncios()
