@@ -10,7 +10,7 @@ from sklearn.metrics.pairwise import cosine_similarity
 st.set_page_config(page_title="TecnoBot – Instituto 13 de Julio", page_icon="🎓", layout="wide")
 
 # ----------------------------------------------------------------------------------
-#  CONSTANTES
+#  CONSTANTES Y CONFIGURACIÓN
 # ----------------------------------------------------------------------------------
 MODELO_PREDETERMINADO = "llama3-8b-8192"
 SYSTEM_PROMPT = """
@@ -20,11 +20,17 @@ Sé siempre amable y servicial.
 """
 DOMINIO_INSTITUCIONAL = "@13dejulio.edu.ar"
 FIREBASE_DB = f"https://{st.secrets['firebase_config']['projectId']}-default-rtdb.firebaseio.com"
-LOGO_URL = "https://i.imgur.com/gJ5Ym2W.png" # Logo de ejemplo
+LOGO_URL = "https://i.imgur.com/gJ5Ym2W.png"
 
 # --- CÓDIGOS SECRETOS SIMPLIFICADOS PARA PRUEBAS ---
 CODIGO_SECRETO_PROFESOR = "ADMIN2025TEST"
 CODIGO_SECRETO_AUTORIDAD = "ADMIN2025TEST"
+
+# ▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼
+# --- MODIFICAR EL TEXTO DEL ANUNCIO AQUÍ ---
+# Si quieres ocultar la barra, deja el texto vacío: ANUNCEMENT_TEXT = ""
+ANNOUNCEMENT_TEXT = "Aviso Importante: El próximo lunes es feriado. No habrá actividades en el instituto."
+# ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
 
 
 # ----------------------------------------------------------------------------------
@@ -37,7 +43,7 @@ def is_expired(inv):          return datetime.fromisoformat(inv["expires"]) < da
 # ----------------------------------------------------------------------------------
 #  ENVOLTORIOS FIREBASE
 # ----------------------------------------------------------------------------------
-def fb_auth(endpoint, data):   # Auth REST
+def fb_auth(endpoint, data):
     url = f"https://identitytoolkit.googleapis.com/v1/{endpoint}?key={st.secrets['firebase_config']['apiKey']}"
     return requests.post(url, json=data).json()
 
@@ -53,10 +59,9 @@ def fb_db(method, path, data=None, token=None):
 #  SEGURIDAD – FUNCIONES
 # ----------------------------------------------------------------------------------
 def send_password_reset(email):
-    return "email" in fb_auth("accounts:sendOobCode",
-                              {"requestType": "PASSWORD_RESET", "email": email})
+    return "email" in fb_auth("accounts:sendOobCode", {"requestType": "PASSWORD_RESET", "email": email})
 
-def log_action(actor_uid, action, payload=None):     # auditoría
+def log_action(actor_uid, action, payload=None):
     node = f"audit/{datetime.utcnow().strftime('%Y/%m/%d')}/{uuid.uuid4()}"
     fb_db("put", node, {"actor":actor_uid,"act":action,"payload":payload or {}, "ts":iso_now()})
 
@@ -104,10 +109,7 @@ def buscar_contexto(q, modelo, docs, idx, datos_usuario):
 
 def stream_respuesta(cliente, historial):
     try:
-        for ch in cliente.chat.completions.create(model=MODELO_PREDETERMINADO,
-                                                  messages=historial,
-                                                  temperature=0.5, max_tokens=1024,
-                                                  stream=True):
+        for ch in cliente.chat.completions.create(model=MODELO_PREDETERMINADO, messages=historial, temperature=0.5, max_tokens=1024, stream=True):
             yield ch.choices[0].delta.content or ""
     except Exception as e:
         st.error(f"Error IA: {e}"); yield ""
@@ -117,6 +119,8 @@ def stream_respuesta(cliente, historial):
 # ----------------------------------------------------------------------------------
 def estilos():
     is_light = st.session_state.get("theme") == "light"
+    # Añadimos un padding al cuerpo para que la barra de anuncios no tape el contenido
+    top_padding = "45px" if ANNOUNCEMENT_TEXT else "0px"
     st.markdown(f"""
     <style>
       :root {{
@@ -133,12 +137,18 @@ def estilos():
 
       .stApp {{
           background-color: var(--bg-primary);
-          background-image: 
-              repeating-linear-gradient(45deg, rgba(161, 201, 244, 0.05), rgba(161, 201, 244, 0.05) 1px, transparent 1px, transparent 20px),
-              linear-gradient(180deg, var(--bg-primary) 0%, var(--bg-secondary) 100%);
+          background-image: repeating-linear-gradient(45deg, rgba(161, 201, 244, 0.05), rgba(161, 201, 244, 0.05) 1px, transparent 1px, transparent 20px), linear-gradient(180deg, var(--bg-primary) 0%, var(--bg-secondary) 100%);
       }}
-      .main > div:first-child {{ padding-top: 0; }}
+      .main {{ padding-top: {top_padding}; }}
       header, [data-testid="stToolbar"] {{ display: none !important; }}
+
+      .announcement-bar {{
+          position: fixed; top: 0; left: 0; width: 100%;
+          background-color: #111827; color: #e5e7eb;
+          text-align: center; padding: 12px 16px;
+          font-size: 15px; font-weight: 500;
+          z-index: 9999;
+      }}
 
       .login-container {{ max-width: 450px; margin: auto; padding-top: 5rem; }}
       h1,h2,h3 {{ color: var(--text-primary); text-align:center;}}
@@ -260,7 +270,7 @@ def pagina_admin():
         for uid,u in datos.items():
             with st.expander(f"{u.get('nombre','')} {u.get('apellido','')} ({u.get('rol')})"):
                 c = st.columns((3,2,2,1));
-                rol = c[0].selectbox("Rol",["alumno","profesor","autoridad"],index=["alumno","profesor","autoridad"].index(u["rol"]),key=f"r{uid}")
+                rol = c[0].selectbox("Rol",["alumno","profesor","autoridad"],index=["alumno","profesor","autoridades"].index(u["rol"]),key=f"r{uid}")
                 dis = c[1].checkbox("Desactivado", value=u.get("disabled",False), key=f"d{uid}")
                 if c[2].button("💾 Guardar", key=f"s{uid}"):
                     fb_db("patch", f"{colecciones[tab]}/{uid}", {"rol":rol,"disabled":dis}, st.session_state.user_token)
@@ -343,6 +353,9 @@ def start_new_chat():
 # ----------------------------------------------------------------------------------
 def app():
     estilos()
+    if ANNOUNCEMENT_TEXT: # Muestra la barra si hay texto
+        st.markdown(f'<div class="announcement-bar">{ANNOUNCEMENT_TEXT}</div>', unsafe_allow_html=True)
+
     if not st.session_state.get("logged_in"):
         pagina_login(); return
     if not st.session_state.get("init_loaded"):
@@ -360,7 +373,6 @@ def app():
     if 'recursos_ia' not in st.session_state:
         st.session_state.recursos_ia = recursos_ia()
     
-    # Menú de Navegación
     menu_options = ["Chat"]
     if not st.session_state.get("guest_mode"):
         menu_options.extend(["Mi Perfil", "Anuncios"])
